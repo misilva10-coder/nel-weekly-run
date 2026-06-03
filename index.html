@@ -628,6 +628,12 @@ function renderJobList() {
         ${actions}
         ${!skipped ? `<button class="btn btn-red btn-sm" style="margin-left:auto;" onclick="skipProp('${date}','${p.id}','${crewId}')">⊘ Skip Week</button>` : ''}
       </div>
+      ${!skipped ? `<div style="margin-top:10px;">
+        <input type="text" maxlength="120" placeholder="Add a note…"
+          value="${esc(log.note || '')}"
+          style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:.85rem;"
+          oninput="saveNote('${key}', this.value)">
+      </div>` : ''}
     </div>`;
   }).join('');
 }
@@ -650,6 +656,12 @@ function resetLog(key) {
   if (!confirm('Clear times for this property?')) return;
   delete db.logs[key];
   saveDB(); renderJobList();
+}
+
+function saveNote(key, value) {
+  if (!db.logs[key]) db.logs[key] = {};
+  db.logs[key].note = value.trim();
+  saveDB();
 }
 
 function calcDuration(start, end) {
@@ -771,7 +783,7 @@ function buildWorkbook() {
     .filter(p => p.crewId === crewId)
     .sort((a, b) => a.order - b.order);
 
-  const detailRows = [['Date','Day','Client / Property','Address','Crew','Start Time','End Time','Duration (hrs)','Notes']];
+  const detailRows = [['Date','Day','Client / Property','Address','Crew','Start Time','End Time','Duration (hrs)','Property Notes','Daily Note']];
   dates.forEach(d => {
     const dow = dayName(d);
     props.forEach(p => {
@@ -780,7 +792,7 @@ function buildWorkbook() {
       const log = db.logs[key] || {};
       const startM = toMin(log.start), endM = toMin(log.end);
       const durHrs = (startM !== null && endM !== null && endM > startM) ? +((endM - startM) / 60).toFixed(2) : '';
-      detailRows.push([d, dow, p.name, p.address, crew?.name || '', log.start || '', log.end || '', durHrs, p.notes || '']);
+      detailRows.push([d, dow, p.name, p.address, crew?.name || '', log.start || '', log.end || '', durHrs, p.notes || '', log.note || '']);
     });
   });
 
