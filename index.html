@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NE Landscapes — Weekly Run</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --green: #2d6a2d;
+    --green-light: #4a9e4a;
+    --green-pale: #e8f5e8;
+    --orange: #e07b2a;
+    --orange-light: #f59a4f;
+    --red: #c0392b;
+    --gray: #555;
+    --gray-light: #f4f4f4;
+    --border: #ddd;
+    --radius: 10px;
+    --shadow: 0 2px 8px rgba(0,0,0,0.10);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f0; color: #222; min-height: 100vh; }
+
+  /* ── NAV ── */
+  nav { background: var(--green); color: #fff; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; height: 56px; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+  nav .brand { font-size: 1.1rem; font-weight: 700; letter-spacing: .5px; }
+  nav .nav-links { display: flex; gap: 6px; }
+  nav button { background: rgba(255,255,255,.15); border: none; color: #fff; padding: 7px 14px; border-radius: 6px; font-size: .85rem; cursor: pointer; transition: background .2s; }
+  nav button:hover, nav button.active { background: rgba(255,255,255,.30); }
+
+  /* ── VIEWS ── */
+  .view { display: none; padding: 20px 16px; max-width: 900px; margin: 0 auto; }
+  .view.active { display: block; }
+
+  /* ── CARDS / SECTIONS ── */
+  .card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; margin-bottom: 18px; }
+  h2 { font-size: 1.2rem; color: var(--green); margin-bottom: 14px; }
+  h3 { font-size: 1rem; color: var(--gray); margin-bottom: 10px; }
+
+  /* ── FORMS ── */
+  .form-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  input[type=text], input[type=date], select {
+    flex: 1; min-width: 140px; padding: 9px 12px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: .95rem; outline: none;
+  }
+  input:focus, select:focus { border-color: var(--green-light); }
+
+  /* ── BUTTONS ── */
+  .btn { padding: 9px 18px; border: none; border-radius: 6px; font-size: .9rem; cursor: pointer; font-weight: 600; transition: opacity .15s; }
+  .btn:hover { opacity: .85; }
+  .btn-green  { background: var(--green); color: #fff; }
+  .btn-orange { background: var(--orange); color: #fff; }
+  .btn-red    { background: var(--red); color: #fff; }
+  .btn-gray   { background: #ccc; color: #333; }
+  .btn-sm     { padding: 5px 11px; font-size: .8rem; }
+
+  /* ── PROPERTY LIST (owner) ── */
+  .prop-list { list-style: none; }
+  .prop-item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--gray-light); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+    cursor: grab; user-select: none;
+  }
+  .prop-item.dragging { opacity: .4; }
+  .prop-item.drag-over { border-color: var(--green-light); background: var(--green-pale); }
+  .drag-handle { color: #aaa; font-size: 1.2rem; cursor: grab; }
+  .prop-order { background: var(--green); color: #fff; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700; flex-shrink: 0; }
+  .prop-info { flex: 1; }
+  .prop-name { font-weight: 600; }
+  .prop-addr { font-size: .82rem; color: var(--gray); }
+  .prop-days { font-size: .78rem; color: var(--green); margin-top: 2px; }
+
+  /* ── CREW LIST ── */
+  .crew-item { display: flex; align-items: center; gap: 10px; background: var(--gray-light); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .crew-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── EMPLOYEE DAILY VIEW ── */
+  .day-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .day-header select, .day-header input { flex: 0 1 auto; min-width: 130px; }
+  .job-card {
+    border: 2px solid var(--border); border-radius: 10px;
+    padding: 14px; margin-bottom: 12px; background: #fff;
+    transition: border-color .2s;
+  }
+  .job-card.status-done { border-color: var(--green-light); background: var(--green-pale); }
+  .job-card.status-active { border-color: var(--orange); background: #fff8f2; }
+  .job-card.status-skipped { border-color: #ccc; background: #f5f5f5; opacity: .6; }
+  .job-num.skipped { background: #bbb; }
+  .job-top { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+  .job-num { background: var(--green); color: #fff; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+  .job-num.active { background: var(--orange); }
+  .job-num.done { background: #888; }
+  .job-title { font-weight: 700; font-size: 1rem; }
+  .job-addr { font-size: .83rem; color: var(--gray); }
+  .job-times { display: flex; gap: 14px; font-size: .85rem; color: var(--gray); margin-bottom: 10px; flex-wrap: wrap; }
+  .job-times span { background: var(--gray-light); padding: 3px 10px; border-radius: 20px; }
+  .job-times span.filled { background: var(--green-pale); color: var(--green); font-weight: 600; }
+  .job-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ── SUMMARY ── */
+  .summary-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  .summary-table th { background: var(--green); color: #fff; padding: 9px 12px; text-align: left; }
+  .summary-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .summary-table tr:last-child td { border-bottom: none; }
+  .summary-table tr:nth-child(even) td { background: var(--gray-light); }
+  .total-row td { font-weight: 700; background: var(--green-pale) !important; }
+
+  /* ── TABS ── */
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 8px 16px; border-radius: 6px 6px 0 0; border: 1px solid var(--border); border-bottom: none; background: #e8e8e8; cursor: pointer; font-size: .88rem; }
+  .tab.active { background: #fff; font-weight: 600; color: var(--green); }
+
+  /* ── MODAL ── */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal { background: #fff; border-radius: 12px; padding: 24px; width: min(420px, 94vw); box-shadow: 0 8px 32px rgba(0,0,0,.2); }
+  .modal h3 { margin-bottom: 14px; color: var(--green); }
+  .modal .form-row { margin-bottom: 8px; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 14px; justify-content: flex-end; }
+
+  /* ── PIN ── */
+  #pin-overlay { position: fixed; inset: 0; background: var(--green); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 200; }
+  #pin-overlay h1 { color: #fff; font-size: 1.6rem; margin-bottom: 8px; }
+  #pin-overlay p { color: rgba(255,255,255,.7); margin-bottom: 24px; }
+  #pin-input { font-size: 1.8rem; letter-spacing: 8px; text-align: center; width: 180px; padding: 10px; border: none; border-radius: 8px; }
+  #pin-error { color: #ffcccc; margin-top: 10px; font-size: .9rem; min-height: 20px; }
+  .pin-btn-row { display: flex; gap: 10px; margin-top: 14px; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .75rem; font-weight: 600; }
+  .badge-green { background: var(--green-pale); color: var(--green); }
+  .badge-orange { background: #fff0e0; color: var(--orange); }
+
+  @media (max-width: 480px) {
+    nav .brand { font-size: .95rem; }
+    nav button { padding: 6px 10px; font-size: .78rem; }
+    .view { padding: 14px 10px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- PIN OVERLAY (owner) -->
+<div id="pin-overlay" style="display:none;">
+  <h1>🌿 NE Landscapes</h1>
+  <p>Enter Owner PIN to continue</p>
+  <input type="password" id="pin-input" maxlength="6" placeholder="••••" inputmode="numeric">
+  <div id="pin-error"></div>
+  <div class="pin-btn-row">
+    <button class="btn btn-gray" onclick="closePinOverlay()">Cancel</button>
+    <button class="btn btn-green" onclick="checkPin()">Enter</button>
+  </div>
+</div>
+
+<!-- PROPERTY MODAL -->
+<div class="modal-bg" id="prop-modal">
+  <div class="modal">
+    <h3 id="prop-modal-title">Add Property</h3>
+    <div class="form-row"><input type="text" id="pm-name" placeholder="Property / Client name"></div>
+    <div class="form-row"><input type="text" id="pm-addr" placeholder="Address"></div>
+    <div class="form-row"><input type="text" id="pm-notes" placeholder="Notes (gate code, dogs, etc.)"></div>
+    <div style="margin-bottom:8px;font-size:.88rem;color:var(--gray);">Service days:</div>
+    <div class="form-row" style="gap:6px;">
+      <label style="display:flex;align-items:center;gap:4px;font-size:.88rem;"><input type="checkbox" name="sday" value="Mon"> Mon</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:.88rem;"><input type="checkbox" name="sday" value="Tue"> Tue</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:.88rem;"><input type="checkbox" name="sday" value="Wed"> Wed</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:.88rem;"><input type="checkbox" name="sday" value="Thu"> Thu</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:.88rem;"><input type="checkbox" name="sday" value="Fri"> Fri</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:.88rem;"><input type="checkbox" name="sday" value="Sat"> Sat</label>
+    </div>
+    <div class="form-row" style="margin-top:6px;">
+      <label style="font-size:.88rem;color:var(--gray);">Assign to crew:</label>
+      <select id="pm-crew"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closePropModal()">Cancel</button>
+      <button class="btn btn-green" onclick="saveProp()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- CREW MODAL -->
+<div class="modal-bg" id="crew-modal">
+  <div class="modal">
+    <h3 id="crew-modal-title">Add Crew</h3>
+    <div class="form-row"><input type="text" id="cm-name" placeholder="Crew name (e.g. Crew A)"></div>
+    <div class="form-row">
+      <label style="font-size:.88rem;align-self:center;">Color:</label>
+      <input type="color" id="cm-color" value="#2d6a2d" style="width:50px;height:36px;border:1px solid var(--border);border-radius:6px;cursor:pointer;padding:2px;">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeCrewModal()">Cancel</button>
+      <button class="btn btn-green" onclick="saveCrew()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav>
+  <div class="brand">🌿 NE Landscapes</div>
+  <div class="nav-links">
+    <button onclick="showView('employee')" id="nav-employee">Daily</button>
+    <button onclick="ownerNav()" id="nav-owner">Owner ▾</button>
+  </div>
+</nav>
+
+<!-- ══════════════════════════════════════════
+     EMPLOYEE / DAILY VIEW
+════════════════════════════════════════════ -->
+<div class="view active" id="view-employee">
+  <div class="card">
+    <div class="day-header">
+      <select id="emp-crew-select" onchange="renderJobList()"></select>
+      <input type="date" id="emp-date" onchange="renderJobList()">
+      <span id="emp-day-label" style="font-weight:700;color:var(--green);font-size:2rem;"></span>
+    </div>
+  </div>
+  <div id="job-list"></div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     OWNER VIEW
+════════════════════════════════════════════ -->
+<div class="view" id="view-owner">
+  <div class="tabs">
+    <div class="tab active" onclick="ownerTab('props',this)">Properties</div>
+    <div class="tab" onclick="ownerTab('crews',this)">Crews</div>
+    <div class="tab" onclick="ownerTab('summary',this)">Weekly Summary</div>
+    <div class="tab" onclick="ownerTab('settings',this)">Settings</div>
+  </div>
+
+  <!-- PROPERTIES TAB -->
+  <div id="owner-props">
+    <div class="card">
+      <h2>Properties</h2>
+      <div class="form-row">
+        <select id="filter-crew-props" onchange="renderPropList()">
+          <option value="">All Crews</option>
+        </select>
+        <button class="btn btn-green" onclick="openPropModal()">+ Add Property</button>
+      </div>
+      <ul class="prop-list" id="prop-list"></ul>
+    </div>
+  </div>
+
+  <!-- CREWS TAB -->
+  <div id="owner-crews" style="display:none;">
+    <div class="card">
+      <h2>Crews</h2>
+      <button class="btn btn-green" style="margin-bottom:14px;" onclick="openCrewModal()">+ Add Crew</button>
+      <div id="crew-list"></div>
+    </div>
+  </div>
+
+  <!-- SUMMARY TAB -->
+  <div id="owner-summary" style="display:none;">
+    <div class="card">
+      <h2>Weekly Summary</h2>
+      <div class="form-row" style="margin-bottom:14px;">
+        <label style="align-self:center;font-size:.9rem;">Week of:</label>
+        <input type="date" id="sum-week" onchange="renderSummary()">
+        <select id="sum-crew" onchange="renderSummary()"></select>
+        <button class="btn btn-green" onclick="exportExcel()">⬇ Download Excel</button>
+        <button class="btn btn-green" onclick="saveToLocation()">📁 Save to…</button>
+        <button class="btn btn-orange" onclick="emailSummary()">✉ Email Summary</button>
+      </div>
+    </div>
+    <div id="summary-content"></div>
+  </div>
+
+  <!-- SETTINGS TAB -->
+  <div id="owner-settings" style="display:none;">
+    <div class="card">
+      <h2>Settings</h2>
+      <div style="margin-bottom:14px;">
+        <label style="font-size:.9rem;display:block;margin-bottom:6px;">Owner PIN (4–6 digits)</label>
+        <div class="form-row">
+          <input type="password" id="pin-new" placeholder="New PIN" maxlength="6" inputmode="numeric" style="max-width:150px;">
+          <button class="btn btn-green" onclick="savePin()">Save PIN</button>
+        </div>
+        <div id="pin-save-msg" style="font-size:.85rem;color:var(--green);margin-top:4px;"></div>
+      </div>
+      <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
+      <div>
+        <label style="font-size:.9rem;display:block;margin-bottom:6px;color:var(--red);">Danger Zone</label>
+        <button class="btn btn-red btn-sm" onclick="clearAllLogs()">Clear All Time Logs</button>
+        <p style="font-size:.78rem;color:var(--gray);margin-top:6px;">This removes all recorded start/end times. Properties and crews are kept.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════
+//  DATA MODEL & PERSISTENCE
+// ══════════════════════════════════════════
+const DB_KEY = 'nel_landscape_v1';
+
+function loadDB() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DB_KEY));
+    if (!saved) return defaultDB();
+    // migrate older saves that are missing newer fields
+    if (!saved.skips) saved.skips = {};
+    return saved;
+  } catch { return defaultDB(); }
+}
+
+function defaultDB() {
+  return {
+    pin: '1234',
+    crews: [{ id: 'crew1', name: 'Crew A', color: '#2d6a2d' }],
+    properties: [],
+    logs: {},   // key: "YYYY-MM-DD_propId_crewId" → {start, end}
+    skips: {}   // key: "weekMon_propId_crewId" → true
+  };
+}
+
+function saveDB() { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+
+let db = loadDB();
+
+// ══════════════════════════════════════════
+//  NAVIGATION
+// ══════════════════════════════════════════
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  if (name === 'employee') renderJobList();
+  if (name === 'owner') { renderPropList(); renderCrewList(); populateOwnerDropdowns(); }
+}
+
+function ownerNav() {
+  document.getElementById('pin-overlay').style.display = 'flex';
+  document.getElementById('pin-input').value = '';
+  document.getElementById('pin-error').textContent = '';
+  setTimeout(() => document.getElementById('pin-input').focus(), 100);
+}
+
+function checkPin() {
+  const val = document.getElementById('pin-input').value;
+  if (val === db.pin) {
+    closePinOverlay();
+    showView('owner');
+  } else {
+    document.getElementById('pin-error').textContent = 'Incorrect PIN. Try again.';
+    document.getElementById('pin-input').value = '';
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('pin-overlay').style.display === 'flex') checkPin();
+});
+
+function closePinOverlay() {
+  document.getElementById('pin-overlay').style.display = 'none';
+}
+
+function ownerTab(tab, el) {
+  ['props','crews','summary','settings'].forEach(t => document.getElementById('owner-' + t).style.display = 'none');
+  document.getElementById('owner-' + tab).style.display = 'block';
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  if (tab === 'summary') renderSummary();
+}
+
+// ══════════════════════════════════════════
+//  CREWS
+// ══════════════════════════════════════════
+let editingCrewId = null;
+
+function openCrewModal(id) {
+  editingCrewId = id || null;
+  const modal = document.getElementById('crew-modal');
+  if (id) {
+    const c = db.crews.find(x => x.id === id);
+    document.getElementById('crew-modal-title').textContent = 'Edit Crew';
+    document.getElementById('cm-name').value = c.name;
+    document.getElementById('cm-color').value = c.color;
+  } else {
+    document.getElementById('crew-modal-title').textContent = 'Add Crew';
+    document.getElementById('cm-name').value = '';
+    document.getElementById('cm-color').value = '#2d6a2d';
+  }
+  modal.classList.add('open');
+}
+
+function closeCrewModal() { document.getElementById('crew-modal').classList.remove('open'); }
+
+function saveCrew() {
+  const name = document.getElementById('cm-name').value.trim();
+  const color = document.getElementById('cm-color').value;
+  if (!name) return alert('Enter a crew name.');
+  if (editingCrewId) {
+    const c = db.crews.find(x => x.id === editingCrewId);
+    c.name = name; c.color = color;
+  } else {
+    db.crews.push({ id: 'c' + Date.now(), name, color });
+  }
+  saveDB(); closeCrewModal(); renderCrewList(); populateAllDropdowns();
+}
+
+function deleteCrew(id) {
+  if (!confirm('Delete this crew? Properties assigned to it will be unassigned.')) return;
+  db.crews = db.crews.filter(c => c.id !== id);
+  db.properties.forEach(p => { if (p.crewId === id) p.crewId = ''; });
+  saveDB(); renderCrewList(); renderPropList(); populateAllDropdowns();
+}
+
+function renderCrewList() {
+  const el = document.getElementById('crew-list');
+  if (!db.crews.length) { el.innerHTML = '<p style="color:var(--gray);font-size:.9rem;">No crews yet.</p>'; return; }
+  el.innerHTML = db.crews.map(c => `
+    <div class="crew-item">
+      <div class="crew-dot" style="background:${c.color}"></div>
+      <div style="flex:1;font-weight:600;">${esc(c.name)}</div>
+      <button class="btn btn-gray btn-sm" onclick="openCrewModal('${c.id}')">Edit</button>
+      <button class="btn btn-red btn-sm" onclick="deleteCrew('${c.id}')">Delete</button>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════
+//  PROPERTIES
+// ══════════════════════════════════════════
+let editingPropId = null;
+let dragSrcIdx = null;
+
+function openPropModal(id) {
+  editingPropId = id || null;
+  const modal = document.getElementById('prop-modal');
+  populatePropCrewSelect();
+  document.querySelectorAll('input[name=sday]').forEach(cb => cb.checked = false);
+  if (id) {
+    const p = db.properties.find(x => x.id === id);
+    document.getElementById('prop-modal-title').textContent = 'Edit Property';
+    document.getElementById('pm-name').value = p.name;
+    document.getElementById('pm-addr').value = p.address;
+    document.getElementById('pm-notes').value = p.notes || '';
+    document.getElementById('pm-crew').value = p.crewId || '';
+    (p.days || []).forEach(d => {
+      const cb = document.querySelector(`input[name=sday][value="${d}"]`);
+      if (cb) cb.checked = true;
+    });
+  } else {
+    document.getElementById('prop-modal-title').textContent = 'Add Property';
+    document.getElementById('pm-name').value = '';
+    document.getElementById('pm-addr').value = '';
+    document.getElementById('pm-notes').value = '';
+    document.getElementById('pm-crew').value = db.crews[0]?.id || '';
+  }
+  modal.classList.add('open');
+}
+
+function closePropModal() { document.getElementById('prop-modal').classList.remove('open'); }
+
+function populatePropCrewSelect() {
+  const sel = document.getElementById('pm-crew');
+  sel.innerHTML = db.crews.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+}
+
+function saveProp() {
+  const name = document.getElementById('pm-name').value.trim();
+  const address = document.getElementById('pm-addr').value.trim();
+  const notes = document.getElementById('pm-notes').value.trim();
+  const crewId = document.getElementById('pm-crew').value;
+  const days = [...document.querySelectorAll('input[name=sday]:checked')].map(cb => cb.value);
+  if (!name) return alert('Enter a property name.');
+  if (editingPropId) {
+    const p = db.properties.find(x => x.id === editingPropId);
+    Object.assign(p, { name, address, notes, crewId, days });
+  } else {
+    db.properties.push({ id: 'p' + Date.now(), name, address, notes, crewId, days, order: db.properties.length });
+  }
+  saveDB(); closePropModal(); renderPropList();
+}
+
+function deleteProp(id) {
+  if (!confirm('Remove this property?')) return;
+  db.properties = db.properties.filter(p => p.id !== id);
+  reorder();
+  saveDB(); renderPropList();
+}
+
+function reorder() {
+  db.properties.forEach((p, i) => p.order = i);
+}
+
+function renderPropList() {
+  const filterCrew = document.getElementById('filter-crew-props')?.value || '';
+  const list = document.getElementById('prop-list');
+  const props = [...db.properties].sort((a, b) => a.order - b.order)
+    .filter(p => !filterCrew || p.crewId === filterCrew);
+  if (!props.length) {
+    list.innerHTML = '<li style="color:var(--gray);font-size:.9rem;padding:8px 0;">No properties yet. Add one above.</li>';
+    return;
+  }
+  list.innerHTML = props.map((p, i) => {
+    const crew = db.crews.find(c => c.id === p.crewId);
+    const daysStr = (p.days || []).join(', ') || 'No days set';
+    return `<li class="prop-item" draggable="true"
+      data-id="${p.id}"
+      ondragstart="dragStart(event,'${p.id}')"
+      ondragover="dragOver(event)"
+      ondragleave="dragLeave(event)"
+      ondrop="dragDrop(event,'${p.id}')"
+      ondragend="dragEnd(event)">
+      <span class="drag-handle">⠿</span>
+      <div class="prop-order">${i + 1}</div>
+      <div class="prop-info">
+        <div class="prop-name">${esc(p.name)}</div>
+        <div class="prop-addr">${esc(p.address)}</div>
+        <div class="prop-days">📅 ${daysStr}${crew ? ` &nbsp;·&nbsp; <span style="color:${crew.color}">●</span> ${esc(crew.name)}` : ''}</div>
+      </div>
+      <button class="btn btn-gray btn-sm" onclick="openPropModal('${p.id}')">Edit</button>
+      <button class="btn btn-red btn-sm" onclick="deleteProp('${p.id}')">✕</button>
+    </li>`;
+  }).join('');
+}
+
+// Drag & drop reorder
+function dragStart(e, id) {
+  dragSrcIdx = id;
+  e.currentTarget.classList.add('dragging');
+}
+function dragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+function dragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+function dragEnd(e) { e.currentTarget.classList.remove('dragging'); }
+function dragDrop(e, targetId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if (dragSrcIdx === targetId) return;
+  const srcIdx = db.properties.findIndex(p => p.id === dragSrcIdx);
+  const tgtIdx = db.properties.findIndex(p => p.id === targetId);
+  const [moved] = db.properties.splice(srcIdx, 1);
+  db.properties.splice(tgtIdx, 0, moved);
+  reorder();
+  saveDB();
+  renderPropList();
+}
+
+// ══════════════════════════════════════════
+//  EMPLOYEE / DAILY VIEW
+// ══════════════════════════════════════════
+function todayStr() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function dayName(dateStr) {
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  return days[new Date(dateStr + 'T12:00:00').getDay()];
+}
+
+function fullDayName(dateStr) {
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  return days[new Date(dateStr + 'T12:00:00').getDay()];
+}
+
+function logKey(date, propId, crewId) { return `${date}_${propId}_${crewId}`; }
+function skipKey(date, propId, crewId) { return `${weekStart(date)}_${propId}_${crewId}`; }
+
+function skipProp(date, propId, crewId) {
+  if (!confirm('Mark this property as inactive for the entire week?')) return;
+  db.skips[skipKey(date, propId, crewId)] = true;
+  saveDB(); renderJobList();
+}
+function unskipProp(date, propId, crewId) {
+  delete db.skips[skipKey(date, propId, crewId)];
+  saveDB(); renderJobList();
+}
+
+function renderJobList() {
+  const crewId = document.getElementById('emp-crew-select').value;
+  const date = document.getElementById('emp-date').value || todayStr();
+  document.getElementById('emp-date').value = date;
+  const dow = dayName(date);
+  document.getElementById('emp-day-label').textContent = fullDayName(date);
+
+  const allProps = [...db.properties]
+    .filter(p => p.crewId === crewId && (p.days || []).includes(dow))
+    .sort((a, b) => a.order - b.order);
+
+  const container = document.getElementById('job-list');
+  if (!allProps.length) {
+    container.innerHTML = '<div class="card" style="color:var(--gray);text-align:center;padding:30px;">No properties scheduled for this crew on ' + dow + '.</div>';
+    return;
+  }
+
+  container.innerHTML = allProps.map((p, i) => {
+    const skipped = !!db.skips[skipKey(date, p.id, crewId)];
+    const key = logKey(date, p.id, crewId);
+    const log = db.logs[key] || {};
+    const hasStart = !!log.start;
+    const hasEnd = !!log.end;
+    const status = skipped ? 'skipped' : hasEnd ? 'done' : hasStart ? 'active' : '';
+    const numClass = skipped ? 'skipped' : hasEnd ? 'done' : hasStart ? 'active' : '';
+
+    const startLabel = hasStart ? `<span class="filled">▶ ${log.start}</span>` : `<span>▶ --:--</span>`;
+    const endLabel   = hasEnd   ? `<span class="filled">■ ${log.end}</span>`   : `<span>■ --:--</span>`;
+    const duration   = hasStart && hasEnd ? `<span class="filled">⏱ ${calcDuration(log.start, log.end)}</span>` : '';
+
+    let actions = '';
+    if (skipped) {
+      actions = `<button class="btn btn-green btn-sm" onclick="unskipProp('${date}','${p.id}','${crewId}')">↺ Restore</button>`;
+    } else if (!hasStart) {
+      actions = `<button class="btn btn-green btn-sm" onclick="logStart('${key}')">▶ Start</button>`;
+    } else if (!hasEnd) {
+      actions = `
+        <button class="btn btn-orange btn-sm" onclick="logEnd('${key}')">■ Stop</button>
+        <button class="btn btn-gray btn-sm" onclick="resetLog('${key}')">↺ Reset</button>`;
+    } else {
+      actions = `<button class="btn btn-gray btn-sm" onclick="resetLog('${key}')">↺ Reset</button>`;
+    }
+
+    return `<div class="job-card status-${status}">
+      <div class="job-top">
+        <div class="job-num ${numClass}">${i + 1}</div>
+        <div>
+          <div class="job-title">${esc(p.name)}</div>
+          <div class="job-addr">${esc(p.address)}</div>
+          ${p.notes ? `<div style="font-size:.8rem;color:var(--orange);margin-top:2px;">📌 ${esc(p.notes)}</div>` : ''}
+        </div>
+      </div>
+      ${!skipped ? `<div class="job-times">${startLabel}${endLabel}${duration}</div>` : '<div style="font-size:.85rem;color:#aaa;margin-bottom:10px;font-style:italic;">Inactive this week</div>'}
+      <div class="job-actions">
+        ${actions}
+        ${!skipped ? `<button class="btn btn-red btn-sm" style="margin-left:auto;" onclick="skipProp('${date}','${p.id}','${crewId}')">⊘ Skip Week</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function nowTime() {
+  const now = new Date();
+  return now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
+function logStart(key) {
+  db.logs[key] = { start: nowTime() };
+  saveDB(); renderJobList();
+}
+function logEnd(key) {
+  if (!db.logs[key]) db.logs[key] = {};
+  db.logs[key].end = nowTime();
+  saveDB(); renderJobList();
+}
+function resetLog(key) {
+  if (!confirm('Clear times for this property?')) return;
+  delete db.logs[key];
+  saveDB(); renderJobList();
+}
+
+function calcDuration(start, end) {
+  const toMin = t => {
+    const [time, ampm] = t.split(' ');
+    let [h, m] = time.split(':').map(Number);
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return h * 60 + m;
+  };
+  const diff = toMin(end) - toMin(start);
+  if (diff < 0) return '?';
+  const h = Math.floor(diff / 60), m = diff % 60;
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ══════════════════════════════════════════
+//  SUMMARY VIEW
+// ══════════════════════════════════════════
+function weekStart(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const day = d.getDay(); // 0=Sun
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); // start Mon
+  return d.toISOString().split('T')[0];
+}
+
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().split('T')[0];
+}
+
+function renderSummary() {
+  const raw = document.getElementById('sum-week').value || todayStr();
+  const weekMon = weekStart(raw);
+  document.getElementById('sum-week').value = weekMon;
+  const crewId = document.getElementById('sum-crew').value;
+  const crew = db.crews.find(c => c.id === crewId);
+
+  const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i)); // Mon–Sat
+  const props = [...db.properties]
+    .filter(p => p.crewId === crewId)
+    .sort((a, b) => a.order - b.order);
+
+  const toMin = t => {
+    if (!t) return null;
+    const [time, ampm] = t.split(' ');
+    let [h, m] = time.split(':').map(Number);
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return h * 60 + m;
+  };
+
+  let grandTotal = 0;
+
+  const rows = props.map(p => {
+    let propTotal = 0;
+    const cells = dates.map(d => {
+      const dow = dayName(d);
+      if (!(p.days || []).includes(dow)) return `<td style="background:#f8f8f8;color:#ccc;text-align:center;">—</td>`;
+      const key = logKey(d, p.id, crewId);
+      const log = db.logs[key] || {};
+      if (log.start && log.end) {
+        const mins = (toMin(log.end) || 0) - (toMin(log.start) || 0);
+        if (mins > 0) propTotal += mins;
+        return `<td style="text-align:center;font-size:.82rem;">${log.start}<br>${log.end}<br><strong>${calcDuration(log.start,log.end)}</strong></td>`;
+      } else if (log.start) {
+        return `<td style="text-align:center;font-size:.82rem;color:var(--orange);">${log.start}<br><em>In progress</em></td>`;
+      }
+      return `<td style="text-align:center;color:#bbb;">—</td>`;
+    });
+    grandTotal += propTotal;
+    const h = Math.floor(propTotal/60), m = propTotal%60;
+    const totStr = propTotal ? (h ? `${h}h ${m}m` : `${m}m`) : '—';
+    return `<tr>
+      <td><strong>${esc(p.name)}</strong><br><span style="font-size:.78rem;color:var(--gray);">${esc(p.address)}</span></td>
+      ${cells.join('')}
+      <td style="text-align:center;font-weight:700;">${totStr}</td>
+    </tr>`;
+  });
+
+  const grandH = Math.floor(grandTotal/60), grandM = grandTotal%60;
+  const grandStr = grandTotal ? (grandH ? `${grandH}h ${grandM}m` : `${grandM}m`) : '—';
+
+  const dayHeaders = dates.map(d => `<th>${dayName(d)}<br><span style="font-size:.75rem;font-weight:400;">${d.slice(5)}</span></th>`).join('');
+
+  document.getElementById('summary-content').innerHTML = `
+    <div class="card" style="overflow-x:auto;">
+      <h2>${crew ? esc(crew.name) : ''} — Week of ${weekMon}</h2>
+      ${rows.length ? `
+      <table class="summary-table">
+        <thead><tr><th>Property</th>${dayHeaders}<th>Total</th></tr></thead>
+        <tbody>${rows.join('')}</tbody>
+        <tfoot><tr class="total-row"><td>TOTAL</td>${dates.map(()=>'<td></td>').join('')}<td style="text-align:center;">${grandStr}</td></tr></tfoot>
+      </table>` : '<p style="color:var(--gray);">No properties for this crew.</p>'}
+    </div>`;
+}
+
+// ══════════════════════════════════════════
+//  EXCEL EXPORT (QuickBooks-ready)
+// ══════════════════════════════════════════
+function buildWorkbook() {
+  const raw = document.getElementById('sum-week').value || todayStr();
+  const weekMon = weekStart(raw);
+  const crewId = document.getElementById('sum-crew').value;
+  const crew = db.crews.find(c => c.id === crewId);
+  const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i));
+
+  const toMin = t => {
+    if (!t) return null;
+    const [time, ampm] = t.split(' ');
+    let [h, m] = time.split(':').map(Number);
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return h * 60 + m;
+  };
+
+  const props = [...db.properties]
+    .filter(p => p.crewId === crewId)
+    .sort((a, b) => a.order - b.order);
+
+  const detailRows = [['Date','Day','Client / Property','Address','Crew','Start Time','End Time','Duration (hrs)','Notes']];
+  dates.forEach(d => {
+    const dow = dayName(d);
+    props.forEach(p => {
+      if (!(p.days || []).includes(dow)) return;
+      const key = logKey(d, p.id, crewId);
+      const log = db.logs[key] || {};
+      const startM = toMin(log.start), endM = toMin(log.end);
+      const durHrs = (startM !== null && endM !== null && endM > startM) ? +((endM - startM) / 60).toFixed(2) : '';
+      detailRows.push([d, dow, p.name, p.address, crew?.name || '', log.start || '', log.end || '', durHrs, p.notes || '']);
+    });
+  });
+
+  const sumRows = [['Client / Property','Address','Crew','Total Hours (week)','Days Serviced']];
+  props.forEach(p => {
+    let total = 0, days = 0;
+    dates.forEach(d => {
+      const dow = dayName(d);
+      if (!(p.days || []).includes(dow)) return;
+      const key = logKey(d, p.id, crewId);
+      const log = db.logs[key] || {};
+      const s = toMin(log.start), e = toMin(log.end);
+      if (s !== null && e !== null && e > s) { total += (e - s); days++; }
+    });
+    sumRows.push([p.name, p.address, crew?.name || '', +(total/60).toFixed(2), days]);
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.aoa_to_sheet(detailRows);
+  const ws2 = XLSX.utils.aoa_to_sheet(sumRows);
+  ws1['!cols'] = [12,8,22,28,12,10,10,14,20].map(w => ({ wch: w }));
+  ws2['!cols'] = [22,28,12,16,14].map(w => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, ws1, 'Time Detail');
+  XLSX.utils.book_append_sheet(wb, ws2, 'Weekly Summary');
+
+  const filename = `NEL Weekly Run Sheet ${weekMon.replace(/-/g,'')}.xlsx`;
+  return { wb, filename };
+}
+
+function exportExcel() {
+  const { wb, filename } = buildWorkbook();
+  XLSX.writeFile(wb, filename);
+}
+
+async function saveToLocation() {
+  const { wb, filename } = buildWorkbook();
+  if (!wb) return;
+  if (!window.showSaveFilePicker) {
+    alert('Your browser does not support "Save to location". Use the Download button instead.');
+    return;
+  }
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: filename,
+      types: [{ description: 'Excel Workbook', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }]
+    });
+    const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const writable = await handle.createWritable();
+    await writable.write(new Blob([wbArray], { type: 'application/octet-stream' }));
+    await writable.close();
+    alert('File saved successfully!');
+  } catch (e) {
+    if (e.name !== 'AbortError') alert('Could not save file: ' + e.message);
+  }
+}
+
+function emailSummary() {
+  const raw = document.getElementById('sum-week').value || todayStr();
+  const weekMon = weekStart(raw);
+  const crewId = document.getElementById('sum-crew').value;
+  const crew = db.crews.find(c => c.id === crewId);
+  const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i));
+
+  const toMin = t => {
+    if (!t) return null;
+    const [time, ampm] = t.split(' ');
+    let [h, m] = time.split(':').map(Number);
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return h * 60 + m;
+  };
+
+  const props = [...db.properties]
+    .filter(p => p.crewId === crewId)
+    .sort((a, b) => a.order - b.order);
+
+  let body = `NE Landscapes — Weekly Run Summary\n`;
+  body += `${crew?.name || ''} | Week of ${weekMon}\n`;
+  body += `${'='.repeat(48)}\n\n`;
+
+  let grandTotal = 0;
+
+  dates.forEach(d => {
+    const dow = dayName(d);
+    const dayProps = props.filter(p => (p.days || []).includes(dow));
+    if (!dayProps.length) return;
+    body += `${dow} ${d}\n${'-'.repeat(32)}\n`;
+    dayProps.forEach((p, i) => {
+      const key = logKey(d, p.id, crewId);
+      const log = db.logs[key] || {};
+      const s = toMin(log.start), e = toMin(log.end);
+      const dur = (s !== null && e !== null && e > s) ? e - s : null;
+      if (dur) grandTotal += dur;
+      const durStr = dur ? calcDuration(log.start, log.end) : '—';
+      body += `  ${i+1}. ${p.name}\n`;
+      body += `     Start: ${log.start || '—'}  |  Stop: ${log.end || '—'}  |  Duration: ${durStr}\n`;
+    });
+    body += '\n';
+  });
+
+  const gh = Math.floor(grandTotal/60), gm = grandTotal%60;
+  body += `${'='.repeat(48)}\n`;
+  body += `TOTAL HOURS: ${gh ? gh+'h ' : ''}${gm}m\n`;
+
+  const subject = encodeURIComponent(`NEL Weekly Run Sheet ${weekMon.replace(/-/g,'')}`);
+  const encodedBody = encodeURIComponent(body);
+  window.location.href = `mailto:?subject=${subject}&body=${encodedBody}`;
+}
+
+// ══════════════════════════════════════════
+//  DROPDOWN POPULATION
+// ══════════════════════════════════════════
+function populateAllDropdowns() { populateOwnerDropdowns(); populateEmpDropdowns(); }
+
+function populateOwnerDropdowns() {
+  const f = document.getElementById('filter-crew-props');
+  if (f) f.innerHTML = '<option value="">All Crews</option>' + db.crews.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+}
+
+function populateEmpDropdowns() {
+  const empSel = document.getElementById('emp-crew-select');
+  const sumSel = document.getElementById('sum-crew');
+  const opts = db.crews.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  empSel.innerHTML = opts;
+  sumSel.innerHTML = opts;
+}
+
+// ══════════════════════════════════════════
+//  SETTINGS
+// ══════════════════════════════════════════
+function savePin() {
+  const val = document.getElementById('pin-new').value.trim();
+  if (!/^\d{4,6}$/.test(val)) return alert('PIN must be 4–6 digits.');
+  db.pin = val;
+  saveDB();
+  document.getElementById('pin-save-msg').textContent = 'PIN saved!';
+  document.getElementById('pin-new').value = '';
+  setTimeout(() => document.getElementById('pin-save-msg').textContent = '', 2000);
+}
+
+function clearAllLogs() {
+  if (!confirm('Are you sure? This will erase ALL recorded times.')) return;
+  db.logs = {};
+  saveDB();
+  alert('All time logs cleared.');
+}
+
+// ══════════════════════════════════════════
+//  UTILS
+// ══════════════════════════════════════════
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ══════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════
+(function init() {
+  document.getElementById('emp-date').value = todayStr();
+  document.getElementById('sum-week').value = weekStart(todayStr());
+  populateEmpDropdowns();
+  renderJobList();
+})();
+</script>
+</body>
+</html>
