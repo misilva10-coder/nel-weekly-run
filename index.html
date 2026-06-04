@@ -334,6 +334,7 @@ function loadLocalCache() {
   try {
     const saved = JSON.parse(localStorage.getItem(DB_KEY));
     if (!saved) return defaultDB();
+    if (!saved.logs)  saved.logs  = {};
     if (!saved.skips) saved.skips = {};
     return saved;
   } catch { return defaultDB(); }
