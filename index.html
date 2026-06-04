@@ -53,7 +53,7 @@
   .btn-orange { background: var(--orange); color: #fff; }
   .btn-red    { background: var(--red); color: #fff; }
   .btn-gray   { background: #ccc; color: #333; }
-  .btn-sm     { padding: 5px 11px; font-size: .8rem; }
+  .btn-sm     { padding: 5px 11px; font-size: .8rem; min-height: 44px; min-width: 44px; }
 
   /* ── PROPERTY LIST (owner) ── */
   .prop-list { list-style: none; }
@@ -61,7 +61,7 @@
     display: flex; align-items: center; gap: 10px;
     background: var(--gray-light); border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
-    cursor: grab; user-select: none;
+    cursor: grab; user-select: none; touch-action: none;
   }
   .prop-item.dragging { opacity: .4; }
   .prop-item.drag-over { border-color: var(--green-light); background: var(--green-pale); }
@@ -132,6 +132,13 @@
   .badge-green { background: var(--green-pale); color: var(--green); }
   .badge-orange { background: #fff0e0; color: var(--orange); }
 
+  @media (max-width: 820px) {
+    #owner-summary .form-row { flex-direction: column; align-items: stretch; }
+    #owner-summary .form-row label { margin-bottom: 2px; }
+    #owner-summary .form-row input,
+    #owner-summary .form-row select,
+    #owner-summary .form-row .btn { width: 100%; }
+  }
   @media (max-width: 480px) {
     nav .brand { font-size: .95rem; }
     nav button { padding: 6px 10px; font-size: .78rem; }
@@ -506,7 +513,10 @@ function renderPropList() {
       ondragover="dragOver(event)"
       ondragleave="dragLeave(event)"
       ondrop="dragDrop(event,'${p.id}')"
-      ondragend="dragEnd(event)">
+      ondragend="dragEnd(event)"
+      ontouchstart="touchDragStart(event,'${p.id}')"
+      ontouchmove="touchDragMove(event)"
+      ontouchend="touchDragEnd(event)">
       <span class="drag-handle">⠿</span>
       <div class="prop-order">${i + 1}</div>
       <div class="prop-info">
@@ -520,7 +530,7 @@ function renderPropList() {
   }).join('');
 }
 
-// Drag & drop reorder
+// Drag & drop reorder (mouse)
 function dragStart(e, id) {
   dragSrcIdx = id;
   e.currentTarget.classList.add('dragging');
@@ -538,6 +548,74 @@ function dragDrop(e, targetId) {
   db.properties.splice(tgtIdx, 0, moved);
   reorder();
   saveDB();
+  renderPropList();
+}
+
+// Touch drag reorder (iPad / touch screens)
+let touchDragId = null, touchClone = null, touchLastTarget = null;
+
+function touchDragStart(e, id) {
+  touchDragId = id;
+  const item = e.currentTarget;
+  item.classList.add('dragging');
+
+  // Create a floating clone so the user sees what they're dragging
+  touchClone = item.cloneNode(true);
+  const r = item.getBoundingClientRect();
+  Object.assign(touchClone.style, {
+    position: 'fixed', top: r.top + 'px', left: r.left + 'px',
+    width: r.width + 'px', opacity: '0.8', pointerEvents: 'none',
+    zIndex: '999', boxShadow: '0 4px 16px rgba(0,0,0,.25)', margin: '0'
+  });
+  document.body.appendChild(touchClone);
+}
+
+function touchDragMove(e) {
+  if (!touchDragId) return;
+  e.preventDefault();
+  const touch = e.touches[0];
+
+  // Move clone with finger
+  if (touchClone) {
+    touchClone.style.top  = (touch.clientY - 30) + 'px';
+    touchClone.style.left = (touch.clientX - 60) + 'px';
+  }
+
+  // Highlight the item under the finger
+  if (touchLastTarget) touchLastTarget.classList.remove('drag-over');
+  const el = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.prop-item');
+  if (el && el.dataset.id !== touchDragId) {
+    el.classList.add('drag-over');
+    touchLastTarget = el;
+  } else {
+    touchLastTarget = null;
+  }
+}
+
+function touchDragEnd(e) {
+  if (!touchDragId) return;
+
+  // Clean up clone & highlights
+  if (touchClone) { touchClone.remove(); touchClone = null; }
+  document.querySelectorAll('.prop-item').forEach(el => {
+    el.classList.remove('dragging', 'drag-over');
+  });
+
+  // Drop onto the highlighted target
+  if (touchLastTarget) {
+    const targetId = touchLastTarget.dataset.id;
+    if (targetId && targetId !== touchDragId) {
+      const srcIdx = db.properties.findIndex(p => p.id === touchDragId);
+      const tgtIdx = db.properties.findIndex(p => p.id === targetId);
+      const [moved] = db.properties.splice(srcIdx, 1);
+      db.properties.splice(tgtIdx, 0, moved);
+      reorder();
+      saveDB();
+    }
+    touchLastTarget = null;
+  }
+
+  touchDragId = null;
   renderPropList();
 }
 
