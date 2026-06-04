@@ -368,6 +368,7 @@ function initFirebase() {
     fbRef.on('value', snapshot => {
       const remote = snapshot.val();
       if (!remote) return;
+      if (!remote.logs)  remote.logs  = {};
       if (!remote.skips) remote.skips = {};
       db = remote;
       saveLocalCache();
