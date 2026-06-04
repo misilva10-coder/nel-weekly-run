@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NE Landscapes — Weekly Run</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <style>
   :root {
     --green: #2d6a2d;
@@ -203,6 +205,9 @@
   </div>
 </div>
 
+<!-- FIREBASE STATUS BANNER -->
+<div id="fb-status" style="display:none;background:#fff3cd;color:#856404;padding:8px 16px;font-size:.85rem;text-align:center;border-bottom:1px solid #ffc107;"></div>
+
 <!-- NAV -->
 <nav>
   <div class="brand">🌿 NE Landscapes</div>
@@ -299,34 +304,114 @@
 </div>
 
 <script>
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyA7wajFpn6t1u_NJhnP8QxkKoVAq81lcII",
+  authDomain: "nel-weekly-run.firebaseapp.com",
+  databaseURL: "https://nel-weekly-run-default-rtdb.firebaseio.com",
+  projectId: "nel-weekly-run",
+  storageBucket: "nel-weekly-run.firebasestorage.app",
+  messagingSenderId: "13330559739",
+  appId: "1:13330559739:web:18764782785aa98cce765e",
+  measurementId: "G-3Q5HEB5564"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+const FIREBASE_CONFIG = {
+  apiKey: "PASTE_HERE",
+  authDomain: "PASTE_HERE",
+  databaseURL: "PASTE_HERE",
+  projectId: "PASTE_HERE",
+  storageBucket: "PASTE_HERE",
+  messagingSenderId: "PASTE_HERE",
+  appId: "PASTE_HERE"
+};
+const DB_PATH = "nel_landscape_v1";
+
 // ══════════════════════════════════════════
 //  DATA MODEL & PERSISTENCE
 // ══════════════════════════════════════════
 const DB_KEY = 'nel_landscape_v1';
-
-function loadDB() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(DB_KEY));
-    if (!saved) return defaultDB();
-    // migrate older saves that are missing newer fields
-    if (!saved.skips) saved.skips = {};
-    return saved;
-  } catch { return defaultDB(); }
-}
 
 function defaultDB() {
   return {
     pin: '1234',
     crews: [{ id: 'crew1', name: 'Crew A', color: '#2d6a2d' }],
     properties: [],
-    logs: {},   // key: "YYYY-MM-DD_propId_crewId" → {start, end}
-    skips: {}   // key: "weekMon_propId_crewId" → true
+    logs: {},
+    skips: {}
   };
 }
 
-function saveDB() { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+function loadLocalCache() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DB_KEY));
+    if (!saved) return defaultDB();
+    if (!saved.skips) saved.skips = {};
+    return saved;
+  } catch { return defaultDB(); }
+}
 
-let db = loadDB();
+function saveLocalCache() {
+  localStorage.setItem(DB_KEY, JSON.stringify(db));
+}
+
+let fbRef = null;
+let _fbSaveTimeout = null;
+
+function initFirebase() {
+  if (FIREBASE_CONFIG.apiKey === 'PASTE_HERE') {
+    document.getElementById('fb-status').textContent = '⚠ Firebase not configured — running in local-only mode. See index.html for setup instructions.';
+    document.getElementById('fb-status').style.display = 'block';
+    return;
+  }
+  try {
+    const app = firebase.initializeApp(FIREBASE_CONFIG);
+    const database = firebase.database(app);
+    fbRef = database.ref(DB_PATH);
+
+    // Push local data to Firebase on first connect if Firebase is empty
+    fbRef.once('value', snapshot => {
+      if (!snapshot.exists()) {
+        fbRef.set(db);
+      }
+    });
+
+    // Real-time listener — fires immediately and on every remote change
+    fbRef.on('value', snapshot => {
+      const remote = snapshot.val();
+      if (!remote) return;
+      if (!remote.skips) remote.skips = {};
+      db = remote;
+      saveLocalCache();
+      rerenderAll();
+    });
+
+    document.getElementById('fb-status').style.display = 'none';
+  } catch (e) {
+    document.getElementById('fb-status').textContent = '⚠ Firebase error: ' + e.message;
+    document.getElementById('fb-status').style.display = 'block';
+  }
+}
+
+function saveDB() {
+  saveLocalCache();
+  if (!fbRef) return;
+  // Debounce rapid saves (e.g. note typing) to avoid hammering Firebase
+  clearTimeout(_fbSaveTimeout);
+  _fbSaveTimeout = setTimeout(() => fbRef.set(db), 300);
+}
+
+let db = loadLocalCache();
 
 // ══════════════════════════════════════════
 //  NAVIGATION
@@ -1026,6 +1111,21 @@ function esc(s) {
 }
 
 // ══════════════════════════════════════════
+//  RERENDER ALL (called when Firebase pushes remote changes)
+// ══════════════════════════════════════════
+function rerenderAll() {
+  populateAllDropdowns();
+  const activeView = document.querySelector('.view.active')?.id;
+  if (activeView === 'view-employee') renderJobList();
+  if (activeView === 'view-owner') {
+    renderPropList();
+    renderCrewList();
+    const activeTab = document.querySelector('#view-owner [id^="owner-"]:not([style*="display: none"]):not([style*="display:none"])');
+    if (activeTab?.id === 'owner-summary') renderSummary();
+  }
+}
+
+// ══════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════
 (function init() {
@@ -1033,6 +1133,7 @@ function esc(s) {
   document.getElementById('sum-week').value = weekStart(todayStr());
   populateEmpDropdowns();
   renderJobList();
+  initFirebase();
 })();
 </script>
 </body>
