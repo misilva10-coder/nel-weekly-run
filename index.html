@@ -732,9 +732,9 @@ function renderJobList() {
   }
 
   container.innerHTML = allProps.map((p, i) => {
-    const skipped = !!db.skips[skipKey(date, p.id, crewId)];
+    const skipped = !!(db.skips || {})[skipKey(date, p.id, crewId)];
     const key = logKey(date, p.id, crewId);
-    const log = db.logs[key] || {};
+    const log = (db.logs || {})[key] || {};
     const hasStart = !!log.start;
     const hasEnd = !!log.end;
     const status = skipped ? 'skipped' : hasEnd ? 'done' : hasStart ? 'active' : '';
