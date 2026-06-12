@@ -1097,7 +1097,11 @@ function esc(s) {
 function rerenderAll() {
   populateAllDropdowns();
   const activeView = document.querySelector('.view.active')?.id;
-  if (activeView === 'view-employee') renderJobList();
+  if (activeView === 'view-employee') {
+    const focused = document.activeElement;
+    if (focused && focused.tagName === 'INPUT' && focused.closest('#job-list')) return;
+    renderJobList();
+  }
   if (activeView === 'view-owner') {
     renderPropList();
     renderCrewList();
