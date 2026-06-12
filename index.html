@@ -63,11 +63,15 @@
     display: flex; align-items: center; gap: 10px;
     background: var(--gray-light); border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
-    cursor: grab; user-select: none; touch-action: none;
+    user-select: none;
   }
   .prop-item.dragging { opacity: .4; }
   .prop-item.drag-over { border-color: var(--green-light); background: var(--green-pale); }
-  .drag-handle { color: #aaa; font-size: 1.2rem; cursor: grab; }
+  .drag-handle {
+    color: #aaa; font-size: 1.4rem; cursor: grab;
+    touch-action: none; padding: 4px 6px; margin: -4px -2px;
+    flex-shrink: 0;
+  }
   .prop-order { background: var(--green); color: #fff; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700; flex-shrink: 0; }
   .prop-info { flex: 1; }
   .prop-name { font-weight: 600; }
@@ -597,6 +601,7 @@ function renderPropList() {
 
 // Drag & drop reorder (mouse)
 function dragStart(e, id) {
+  if (!e.target.closest('.drag-handle')) { e.preventDefault(); return; }
   dragSrcIdx = id;
   e.currentTarget.classList.add('dragging');
 }
@@ -620,7 +625,7 @@ function dragDrop(e, targetId) {
 let touchDragId = null, touchClone = null, touchLastTarget = null;
 
 function touchDragStart(e, id) {
-  if (e.target.closest('button')) return;
+  if (!e.target.closest('.drag-handle')) return;
   touchDragId = id;
   const item = e.currentTarget;
   item.classList.add('dragging');
