@@ -620,6 +620,7 @@ function dragDrop(e, targetId) {
 let touchDragId = null, touchClone = null, touchLastTarget = null;
 
 function touchDragStart(e, id) {
+  if (e.target.closest('button')) return;
   touchDragId = id;
   const item = e.currentTarget;
   item.classList.add('dragging');
