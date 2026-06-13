@@ -576,9 +576,8 @@ function renderPropList() {
   list.innerHTML = props.map((p, i) => {
     const crew = db.crews.find(c => c.id === p.crewId);
     const daysStr = (p.days || []).join(', ') || 'No days set';
-    return `<li class="prop-item" draggable="true"
+    return `<li class="prop-item"
       data-id="${p.id}"
-      ondragstart="dragStart(event,'${p.id}')"
       ondragover="dragOver(event)"
       ondragleave="dragLeave(event)"
       ondrop="dragDrop(event,'${p.id}')"
@@ -586,7 +585,7 @@ function renderPropList() {
       ontouchstart="touchDragStart(event,'${p.id}')"
       ontouchmove="touchDragMove(event)"
       ontouchend="touchDragEnd(event)">
-      <span class="drag-handle">⠿</span>
+      <span class="drag-handle" onmousedown="handleMouseDown(event,'${p.id}')">⠿</span>
       <div class="prop-order">${i + 1}</div>
       <div class="prop-info">
         <div class="prop-name">${esc(p.name)}</div>
@@ -600,14 +599,31 @@ function renderPropList() {
 }
 
 // Drag & drop reorder (mouse)
-function dragStart(e, id) {
-  if (!e.target.closest('.drag-handle')) { e.preventDefault(); return; }
-  dragSrcIdx = id;
-  e.currentTarget.classList.add('dragging');
+// We set draggable on the <li> only while the handle is held down,
+// so clicking anywhere else on the row never starts a drag.
+function handleMouseDown(e, id) {
+  const li = e.currentTarget.closest('.prop-item');
+  if (!li) return;
+  li.setAttribute('draggable', 'true');
+  li.ondragstart = (de) => {
+    dragSrcIdx = id;
+    li.classList.add('dragging');
+  };
+  // Remove draggable on mouse-up so normal clicks on the row stay normal
+  const cleanup = () => {
+    li.removeAttribute('draggable');
+    li.ondragstart = null;
+    window.removeEventListener('mouseup', cleanup);
+  };
+  window.addEventListener('mouseup', cleanup);
 }
 function dragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
 function dragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
-function dragEnd(e) { e.currentTarget.classList.remove('dragging'); }
+function dragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  e.currentTarget.removeAttribute('draggable');
+  e.currentTarget.ondragstart = null;
+}
 function dragDrop(e, targetId) {
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
@@ -694,7 +710,10 @@ function touchDragEnd(e) {
 //  EMPLOYEE / DAILY VIEW
 // ══════════════════════════════════════════
 function todayStr() {
-  return new Date().toISOString().split('T')[0];
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
 function dayName(dateStr) {
