@@ -255,8 +255,10 @@
           <option value="">All Crews</option>
         </select>
         <button class="btn btn-green" onclick="openPropModal()">+ Add Property</button>
+        <button class="btn btn-gray btn-sm" id="toggle-deleted-btn" onclick="toggleShowDeleted()" style="font-size:.82rem;">Show Removed</button>
       </div>
       <ul class="prop-list" id="prop-list"></ul>
+      <div id="deleted-prop-list"></div>
     </div>
   </div>
 
@@ -553,21 +555,55 @@ function saveProp() {
   saveDB(); closePropModal(); renderPropList();
 }
 
+let showDeleted = false;
+
+function toggleShowDeleted() {
+  showDeleted = !showDeleted;
+  document.getElementById('toggle-deleted-btn').textContent = showDeleted ? 'Hide Removed' : 'Show Removed';
+  renderDeletedPropList();
+}
+
+function restoreProp(id) {
+  const p = db.properties.find(x => x.id === id);
+  if (p) { delete p.deleted; reorder(); saveDB(); renderPropList(); renderDeletedPropList(); }
+}
+
+function renderDeletedPropList() {
+  const el = document.getElementById('deleted-prop-list');
+  if (!el) return;
+  if (!showDeleted) { el.innerHTML = ''; return; }
+  const filterCrew = document.getElementById('filter-crew-props')?.value || '';
+  const deleted = db.properties.filter(p => p.deleted && (!filterCrew || p.crewId === filterCrew));
+  if (!deleted.length) { el.innerHTML = '<p style="color:var(--gray);font-size:.88rem;margin-top:8px;">No removed properties.</p>'; return; }
+  el.innerHTML = '<p style="font-size:.82rem;color:var(--gray);margin:10px 0 6px;">Removed properties:</p>' + deleted.map(p => {
+    const crew = db.crews.find(c => c.id === p.crewId);
+    return `<div style="display:flex;align-items:center;gap:10px;background:#f5f5f5;border:1px dashed #ccc;border-radius:8px;padding:10px 12px;margin-bottom:8px;opacity:.75;">
+      <div style="flex:1;">
+        <div style="font-weight:600;color:#777;">${esc(p.name)}</div>
+        <div style="font-size:.82rem;color:#aaa;">${esc(p.address)}${crew ? ` · ${esc(crew.name)}` : ''}</div>
+      </div>
+      <button class="btn btn-green btn-sm" onclick="restoreProp('${p.id}')">↺ Restore</button>
+    </div>`;
+  }).join('');
+}
+
 function deleteProp(id) {
   if (!confirm('Remove this property?')) return;
-  db.properties = db.properties.filter(p => p.id !== id);
+  const p = db.properties.find(x => x.id === id);
+  if (p) p.deleted = true;
   reorder();
   saveDB(); renderPropList();
 }
 
 function reorder() {
-  db.properties.forEach((p, i) => p.order = i);
+  db.properties.filter(p => !p.deleted).forEach((p, i) => p.order = i);
 }
 
 function renderPropList() {
+  renderDeletedPropList();
   const filterCrew = document.getElementById('filter-crew-props')?.value || '';
   const list = document.getElementById('prop-list');
-  const props = [...db.properties].sort((a, b) => a.order - b.order)
+  const props = [...db.properties].filter(p => !p.deleted).sort((a, b) => a.order - b.order)
     .filter(p => !filterCrew || p.crewId === filterCrew);
   if (!props.length) {
     list.innerHTML = '<li style="color:var(--gray);font-size:.9rem;padding:8px 0;">No properties yet. Add one above.</li>';
@@ -747,7 +783,7 @@ function renderJobList() {
   document.getElementById('emp-day-label').textContent = fullDayName(date);
 
   const allProps = [...db.properties]
-    .filter(p => p.crewId === crewId && (p.days || []).includes(dow))
+    .filter(p => !p.deleted && p.crewId === crewId && (p.days || []).includes(dow))
     .sort((a, b) => a.order - b.order);
 
   const container = document.getElementById('job-list');
@@ -870,9 +906,17 @@ function renderSummary() {
   const crew = db.crews.find(c => c.id === crewId);
 
   const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i)); // Mon–Sat
-  const props = [...db.properties]
-    .filter(p => p.crewId === crewId)
+  const activeProps = [...db.properties]
+    .filter(p => !p.deleted && p.crewId === crewId)
     .sort((a, b) => a.order - b.order);
+
+  // Include deleted properties that still have logs in this week
+  const deletedWithLogs = db.properties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => {
+    const key = logKey(d, p.id, crewId);
+    return db.logs[key]?.start;
+  }));
+
+  const props = [...activeProps, ...deletedWithLogs];
 
   const toMin = t => {
     if (!t) return null;
@@ -906,8 +950,9 @@ function renderSummary() {
     grandTotal += propTotal;
     const h = Math.floor(propTotal/60), m = propTotal%60;
     const totStr = propTotal ? (h ? `${h}h ${m}m` : `${m}m`) : '—';
+    const deletedLabel = p.deleted ? ` <span style="font-size:.72rem;color:#aaa;font-style:italic;">(removed)</span>` : '';
     return `<tr>
-      <td><strong>${esc(p.name)}</strong><br><span style="font-size:.78rem;color:var(--gray);">${esc(p.address)}</span></td>
+      <td><strong>${esc(p.name)}</strong>${deletedLabel}<br><span style="font-size:.78rem;color:var(--gray);">${esc(p.address)}</span></td>
       ${cells.join('')}
       <td style="text-align:center;font-weight:700;">${totStr}</td>
     </tr>`;
@@ -949,9 +994,9 @@ function buildWorkbook() {
     return h * 60 + m;
   };
 
-  const props = [...db.properties]
-    .filter(p => p.crewId === crewId)
-    .sort((a, b) => a.order - b.order);
+  const activePropsWB = [...db.properties].filter(p => !p.deleted && p.crewId === crewId).sort((a, b) => a.order - b.order);
+  const deletedWithLogsWB = db.properties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => db.logs[logKey(d, p.id, crewId)]?.start));
+  const props = [...activePropsWB, ...deletedWithLogsWB];
 
   const detailRows = [['Date','Day','Client / Property','Address','Crew','Status','Start Time','End Time','Duration (hrs)','Property Notes','Daily Note']];
   dates.forEach(d => {
@@ -1039,9 +1084,9 @@ function emailSummary() {
     return h * 60 + m;
   };
 
-  const props = [...db.properties]
-    .filter(p => p.crewId === crewId)
-    .sort((a, b) => a.order - b.order);
+  const activePropsEM = [...db.properties].filter(p => !p.deleted && p.crewId === crewId).sort((a, b) => a.order - b.order);
+  const deletedWithLogsEM = db.properties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => db.logs[logKey(d, p.id, crewId)]?.start));
+  const props = [...activePropsEM, ...deletedWithLogsEM];
 
   let body = `NE Landscapes — Weekly Run Summary\n`;
   body += `${crew?.name || ''} | Week of ${weekMon}\n`;
