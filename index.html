@@ -12,6 +12,9 @@
     --green: #2d6a2d;
     --green-light: #4a9e4a;
     --green-pale: #e8f5e8;
+    --blue: #2a5d8f;
+    --blue-light: #4f8fc2;
+    --blue-pale: #e6f0fa;
     --orange: #e07b2a;
     --orange-light: #f59a4f;
     --red: #c0392b;
@@ -138,12 +141,19 @@
   .badge-green { background: var(--green-pale); color: var(--green); }
   .badge-orange { background: #fff0e0; color: var(--orange); }
 
+  /* ── SNOW THEME (re-tints green-based components to blue within snow sections) ── */
+  #view-snow, #owner-snowprops, #owner-snowsummary, #snow-prop-modal {
+    --green: var(--blue);
+    --green-light: var(--blue-light);
+    --green-pale: var(--blue-pale);
+  }
+
   @media (max-width: 820px) {
-    #owner-summary .form-row { flex-direction: column; align-items: stretch; }
-    #owner-summary .form-row label { margin-bottom: 2px; }
-    #owner-summary .form-row input,
-    #owner-summary .form-row select,
-    #owner-summary .form-row .btn { width: 100%; }
+    #owner-summary .form-row, #owner-snowsummary .form-row { flex-direction: column; align-items: stretch; }
+    #owner-summary .form-row label, #owner-snowsummary .form-row label { margin-bottom: 2px; }
+    #owner-summary .form-row input, #owner-snowsummary .form-row input,
+    #owner-summary .form-row select, #owner-snowsummary .form-row select,
+    #owner-summary .form-row .btn, #owner-snowsummary .form-row .btn { width: 100%; }
   }
   @media (max-width: 480px) {
     nav .brand { font-size: .95rem; }
@@ -209,6 +219,24 @@
   </div>
 </div>
 
+<!-- SNOW PROPERTY MODAL -->
+<div class="modal-bg" id="snow-prop-modal">
+  <div class="modal">
+    <h3 id="snow-prop-modal-title">Add Snow Property</h3>
+    <div class="form-row"><input type="text" id="spm-name" placeholder="Property / Client name"></div>
+    <div class="form-row"><input type="text" id="spm-addr" placeholder="Address"></div>
+    <div class="form-row"><input type="text" id="spm-notes" placeholder="Notes (gate code, salt only, etc.)"></div>
+    <div class="form-row" style="margin-top:6px;">
+      <label style="font-size:.88rem;color:var(--gray);">Assign to crew:</label>
+      <select id="spm-crew"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeSnowPropModal()">Cancel</button>
+      <button class="btn btn-green" onclick="saveSnowProp()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- FIREBASE STATUS BANNER -->
 <div id="fb-status" style="display:none;background:#fff3cd;color:#856404;padding:8px 16px;font-size:.85rem;text-align:center;border-bottom:1px solid #ffc107;"></div>
 
@@ -216,7 +244,8 @@
 <nav>
   <div class="brand">🌿 NE Landscapes</div>
   <div class="nav-links">
-    <button onclick="showView('employee')" id="nav-employee">Daily</button>
+    <button onclick="showView('employee')" id="nav-employee">Grass</button>
+    <button onclick="showView('snow')" id="nav-snow">❄ Snow</button>
     <button onclick="ownerNav()" id="nav-owner">Owner ▾</button>
   </div>
 </nav>
@@ -228,11 +257,25 @@
   <div class="card">
     <div class="day-header">
       <select id="emp-crew-select" onchange="renderJobList()"></select>
-      <input type="date" id="emp-date" onchange="renderJobList()">
+      <input type="date" id="emp-date" onchange="onDailyDateChange('emp')">
       <span id="emp-day-label" style="font-weight:700;color:var(--green);font-size:2rem;"></span>
     </div>
   </div>
   <div id="job-list"></div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     SNOW DAILY VIEW
+════════════════════════════════════════════ -->
+<div class="view" id="view-snow">
+  <div class="card">
+    <div class="day-header">
+      <select id="snow-crew-select" onchange="renderSnowJobList()"></select>
+      <input type="date" id="snow-date" onchange="onDailyDateChange('snow')">
+      <span id="snow-day-label" style="font-weight:700;color:var(--green);font-size:2rem;"></span>
+    </div>
+  </div>
+  <div id="snow-job-list"></div>
 </div>
 
 <!-- ══════════════════════════════════════════
@@ -241,8 +284,10 @@
 <div class="view" id="view-owner">
   <div class="tabs">
     <div class="tab active" onclick="ownerTab('props',this)">Properties</div>
+    <div class="tab" onclick="ownerTab('snowprops',this)">Snow Properties</div>
     <div class="tab" onclick="ownerTab('crews',this)">Crews</div>
     <div class="tab" onclick="ownerTab('summary',this)">Weekly Summary</div>
+    <div class="tab" onclick="ownerTab('snowsummary',this)">Snow Summary</div>
     <div class="tab" onclick="ownerTab('settings',this)">Settings</div>
   </div>
 
@@ -259,6 +304,22 @@
       </div>
       <ul class="prop-list" id="prop-list"></ul>
       <div id="deleted-prop-list"></div>
+    </div>
+  </div>
+
+  <!-- SNOW PROPERTIES TAB -->
+  <div id="owner-snowprops" style="display:none;">
+    <div class="card">
+      <h2>Snow Properties</h2>
+      <div class="form-row">
+        <select id="filter-crew-snowprops" onchange="renderSnowPropList()">
+          <option value="">All Crews</option>
+        </select>
+        <button class="btn btn-green" onclick="openSnowPropModal()">+ Add Snow Property</button>
+        <button class="btn btn-gray btn-sm" id="toggle-deleted-snow-btn" onclick="toggleShowSnowDeleted()" style="font-size:.82rem;">Show Removed</button>
+      </div>
+      <ul class="prop-list" id="snow-prop-list"></ul>
+      <div id="deleted-snow-prop-list"></div>
     </div>
   </div>
 
@@ -287,10 +348,37 @@
     <div id="summary-content"></div>
   </div>
 
+  <!-- SNOW SUMMARY TAB -->
+  <div id="owner-snowsummary" style="display:none;">
+    <div class="card">
+      <h2>Snow Weekly Summary</h2>
+      <div class="form-row" style="margin-bottom:14px;">
+        <label style="align-self:center;font-size:.9rem;">Week of:</label>
+        <input type="date" id="snow-sum-week" onchange="renderSnowSummary()">
+        <select id="snow-sum-crew" onchange="renderSnowSummary()"></select>
+        <button class="btn btn-green" onclick="exportSnowExcel()">⬇ Download Excel</button>
+        <button class="btn btn-green" onclick="saveSnowToLocation()">📁 Save to…</button>
+        <button class="btn btn-orange" onclick="emailSnowSummary()">✉ Email Summary</button>
+      </div>
+    </div>
+    <div id="snow-summary-content"></div>
+  </div>
+
   <!-- SETTINGS TAB -->
   <div id="owner-settings" style="display:none;">
     <div class="card">
       <h2>Settings</h2>
+      <div style="margin-bottom:14px;">
+        <label style="font-size:.9rem;display:block;margin-bottom:6px;">Default tab on open</label>
+        <div class="form-row">
+          <select id="default-tab-select" onchange="saveDefaultTab()" style="max-width:200px;">
+            <option value="employee">🌿 Grass</option>
+            <option value="snow">❄ Snow</option>
+          </select>
+        </div>
+        <p style="font-size:.78rem;color:var(--gray);margin-top:4px;">Which tab loads first when the app is opened — e.g. Grass in summer, Snow in winter.</p>
+      </div>
+      <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
       <div style="margin-bottom:14px;">
         <label style="font-size:.9rem;display:block;margin-bottom:6px;">Owner PIN (4–6 digits)</label>
         <div class="form-row">
@@ -329,11 +417,30 @@ const DB_KEY = 'nel_landscape_v1';
 function defaultDB() {
   return {
     pin: '1234',
+    defaultTab: 'employee',
     crews: [{ id: 'crew1', name: 'Crew A', color: '#2d6a2d' }],
     properties: [],
     logs: {},
-    skips: {}
+    skips: {},
+    snowProperties: [],
+    snowLogs: {},
+    snowSkips: {}
   };
+}
+
+// Snow logs moved from a single start/end/services per property/day to a list of
+// timed "visits" (each with its own start/end/services), so a crew can plow, leave,
+// then come back and plow again + salt as a separate visit. This upgrades any
+// old-shape log (a bare start/end/services) into { visits: [...] } in place.
+function migrateSnowLogs(snowLogs) {
+  Object.values(snowLogs).forEach(log => {
+    if (!log) return;
+    if (!log.visits) {
+      log.visits = log.start ? [{ start: log.start, end: log.end || null, services: log.services || [] }] : [];
+      delete log.start; delete log.end; delete log.services;
+    }
+  });
+  return snowLogs;
 }
 
 function loadLocalCache() {
@@ -342,6 +449,11 @@ function loadLocalCache() {
     if (!saved) return defaultDB();
     if (!saved.logs)  saved.logs  = {};
     if (!saved.skips) saved.skips = {};
+    if (!saved.snowProperties) saved.snowProperties = [];
+    if (!saved.snowLogs)  saved.snowLogs  = {};
+    if (!saved.snowSkips) saved.snowSkips = {};
+    if (!saved.defaultTab) saved.defaultTab = 'employee';
+    migrateSnowLogs(saved.snowLogs);
     return saved;
   } catch { return defaultDB(); }
 }
@@ -377,6 +489,11 @@ function initFirebase() {
       if (!remote) return;
       if (!remote.logs)  remote.logs  = {};
       if (!remote.skips) remote.skips = {};
+      if (!remote.snowProperties) remote.snowProperties = [];
+      if (!remote.snowLogs)  remote.snowLogs  = {};
+      if (!remote.snowSkips) remote.snowSkips = {};
+      if (!remote.defaultTab) remote.defaultTab = 'employee';
+      migrateSnowLogs(remote.snowLogs);
       db = remote;
       saveLocalCache();
       rerenderAll();
@@ -408,7 +525,8 @@ function showView(name) {
   document.getElementById('view-' + name).classList.add('active');
   document.getElementById('nav-' + name).classList.add('active');
   if (name === 'employee') renderJobList();
-  if (name === 'owner') { renderPropList(); renderCrewList(); populateOwnerDropdowns(); }
+  if (name === 'snow') renderSnowJobList();
+  if (name === 'owner') { renderPropList(); renderCrewList(); renderSnowPropList(); populateOwnerDropdowns(); }
 }
 
 function ownerNav() {
@@ -438,11 +556,13 @@ function closePinOverlay() {
 }
 
 function ownerTab(tab, el) {
-  ['props','crews','summary','settings'].forEach(t => document.getElementById('owner-' + t).style.display = 'none');
+  ['props','snowprops','crews','summary','snowsummary','settings'].forEach(t => document.getElementById('owner-' + t).style.display = 'none');
   document.getElementById('owner-' + tab).style.display = 'block';
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
   if (tab === 'summary') renderSummary();
+  if (tab === 'snowsummary') renderSnowSummary();
+  if (tab === 'settings') renderSettings();
 }
 
 // ══════════════════════════════════════════
@@ -743,10 +863,236 @@ function touchDragEnd(e) {
 }
 
 // ══════════════════════════════════════════
+//  SNOW PROPERTIES
+// ══════════════════════════════════════════
+let editingSnowPropId = null;
+let dragSrcSnowIdx = null;
+
+function openSnowPropModal(id) {
+  editingSnowPropId = id || null;
+  const modal = document.getElementById('snow-prop-modal');
+  populateSnowPropCrewSelect();
+  if (id) {
+    const p = db.snowProperties.find(x => x.id === id);
+    document.getElementById('snow-prop-modal-title').textContent = 'Edit Snow Property';
+    document.getElementById('spm-name').value = p.name;
+    document.getElementById('spm-addr').value = p.address;
+    document.getElementById('spm-notes').value = p.notes || '';
+    document.getElementById('spm-crew').value = p.crewId || '';
+  } else {
+    document.getElementById('snow-prop-modal-title').textContent = 'Add Snow Property';
+    document.getElementById('spm-name').value = '';
+    document.getElementById('spm-addr').value = '';
+    document.getElementById('spm-notes').value = '';
+    document.getElementById('spm-crew').value = db.crews[0]?.id || '';
+  }
+  modal.classList.add('open');
+}
+
+function closeSnowPropModal() { document.getElementById('snow-prop-modal').classList.remove('open'); }
+
+function populateSnowPropCrewSelect() {
+  const sel = document.getElementById('spm-crew');
+  sel.innerHTML = db.crews.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+}
+
+function saveSnowProp() {
+  const name = document.getElementById('spm-name').value.trim();
+  const address = document.getElementById('spm-addr').value.trim();
+  const notes = document.getElementById('spm-notes').value.trim();
+  const crewId = document.getElementById('spm-crew').value;
+  if (!name) return alert('Enter a property name.');
+  if (editingSnowPropId) {
+    const p = db.snowProperties.find(x => x.id === editingSnowPropId);
+    Object.assign(p, { name, address, notes, crewId });
+  } else {
+    db.snowProperties.push({ id: 'sp' + Date.now(), name, address, notes, crewId, order: db.snowProperties.length });
+  }
+  saveDB(); closeSnowPropModal(); renderSnowPropList();
+}
+
+let showSnowDeleted = false;
+
+function toggleShowSnowDeleted() {
+  showSnowDeleted = !showSnowDeleted;
+  document.getElementById('toggle-deleted-snow-btn').textContent = showSnowDeleted ? 'Hide Removed' : 'Show Removed';
+  renderDeletedSnowPropList();
+}
+
+function restoreSnowProp(id) {
+  const p = db.snowProperties.find(x => x.id === id);
+  if (p) { delete p.deleted; reorderSnow(); saveDB(); renderSnowPropList(); renderDeletedSnowPropList(); }
+}
+
+function renderDeletedSnowPropList() {
+  const el = document.getElementById('deleted-snow-prop-list');
+  if (!el) return;
+  if (!showSnowDeleted) { el.innerHTML = ''; return; }
+  const filterCrew = document.getElementById('filter-crew-snowprops')?.value || '';
+  const deleted = db.snowProperties.filter(p => p.deleted && (!filterCrew || p.crewId === filterCrew));
+  if (!deleted.length) { el.innerHTML = '<p style="color:var(--gray);font-size:.88rem;margin-top:8px;">No removed properties.</p>'; return; }
+  el.innerHTML = '<p style="font-size:.82rem;color:var(--gray);margin:10px 0 6px;">Removed properties:</p>' + deleted.map(p => {
+    const crew = db.crews.find(c => c.id === p.crewId);
+    return `<div style="display:flex;align-items:center;gap:10px;background:#f5f5f5;border:1px dashed #ccc;border-radius:8px;padding:10px 12px;margin-bottom:8px;opacity:.75;">
+      <div style="flex:1;">
+        <div style="font-weight:600;color:#777;">${esc(p.name)}</div>
+        <div style="font-size:.82rem;color:#aaa;">${esc(p.address)}${crew ? ` · ${esc(crew.name)}` : ''}</div>
+      </div>
+      <button class="btn btn-green btn-sm" onclick="restoreSnowProp('${p.id}')">↺ Restore</button>
+    </div>`;
+  }).join('');
+}
+
+function deleteSnowProp(id) {
+  if (!confirm('Remove this snow property?')) return;
+  const p = db.snowProperties.find(x => x.id === id);
+  if (p) p.deleted = true;
+  reorderSnow();
+  saveDB(); renderSnowPropList();
+}
+
+function reorderSnow() {
+  db.snowProperties.filter(p => !p.deleted).forEach((p, i) => p.order = i);
+}
+
+function renderSnowPropList() {
+  renderDeletedSnowPropList();
+  const filterCrew = document.getElementById('filter-crew-snowprops')?.value || '';
+  const list = document.getElementById('snow-prop-list');
+  const props = [...db.snowProperties].filter(p => !p.deleted).sort((a, b) => a.order - b.order)
+    .filter(p => !filterCrew || p.crewId === filterCrew);
+  if (!props.length) {
+    list.innerHTML = '<li style="color:var(--gray);font-size:.9rem;padding:8px 0;">No snow properties yet. Add one above.</li>';
+    return;
+  }
+  list.innerHTML = props.map((p, i) => {
+    const crew = db.crews.find(c => c.id === p.crewId);
+    return `<li class="prop-item"
+      data-id="${p.id}"
+      ondragover="dragOverSnow(event)"
+      ondragleave="dragLeaveSnow(event)"
+      ondrop="dragDropSnow(event,'${p.id}')"
+      ondragend="dragEndSnow(event)"
+      ontouchstart="touchSnowDragStart(event,'${p.id}')"
+      ontouchmove="touchSnowDragMove(event)"
+      ontouchend="touchSnowDragEnd(event)">
+      <span class="drag-handle" onmousedown="handleSnowMouseDown(event,'${p.id}')">⠿</span>
+      <div class="prop-order">${i + 1}</div>
+      <div class="prop-info">
+        <div class="prop-name">${esc(p.name)}</div>
+        <div class="prop-addr">${esc(p.address)}</div>
+        <div class="prop-days">${crew ? `<span style="color:${crew.color}">●</span> ${esc(crew.name)}` : 'No crew assigned'}</div>
+      </div>
+      <button class="btn btn-gray btn-sm" onclick="openSnowPropModal('${p.id}')">Edit</button>
+      <button class="btn btn-red btn-sm" onclick="deleteSnowProp('${p.id}')">✕</button>
+    </li>`;
+  }).join('');
+}
+
+// Drag & drop reorder (mouse)
+function handleSnowMouseDown(e, id) {
+  const li = e.currentTarget.closest('.prop-item');
+  if (!li) return;
+  li.setAttribute('draggable', 'true');
+  li.ondragstart = (de) => {
+    dragSrcSnowIdx = id;
+    li.classList.add('dragging');
+  };
+  const cleanup = () => {
+    li.removeAttribute('draggable');
+    li.ondragstart = null;
+    window.removeEventListener('mouseup', cleanup);
+  };
+  window.addEventListener('mouseup', cleanup);
+}
+function dragOverSnow(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+function dragLeaveSnow(e) { e.currentTarget.classList.remove('drag-over'); }
+function dragEndSnow(e) {
+  e.currentTarget.classList.remove('dragging');
+  e.currentTarget.removeAttribute('draggable');
+  e.currentTarget.ondragstart = null;
+}
+function dragDropSnow(e, targetId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if (dragSrcSnowIdx === targetId) return;
+  const srcIdx = db.snowProperties.findIndex(p => p.id === dragSrcSnowIdx);
+  const tgtIdx = db.snowProperties.findIndex(p => p.id === targetId);
+  const [moved] = db.snowProperties.splice(srcIdx, 1);
+  db.snowProperties.splice(tgtIdx, 0, moved);
+  reorderSnow();
+  saveDB();
+  renderSnowPropList();
+}
+
+// Touch drag reorder (iPad / touch screens)
+let touchSnowDragId = null, touchSnowClone = null, touchSnowLastTarget = null;
+
+function touchSnowDragStart(e, id) {
+  if (!e.target.closest('.drag-handle')) return;
+  touchSnowDragId = id;
+  const item = e.currentTarget;
+  item.classList.add('dragging');
+
+  touchSnowClone = item.cloneNode(true);
+  const r = item.getBoundingClientRect();
+  Object.assign(touchSnowClone.style, {
+    position: 'fixed', top: r.top + 'px', left: r.left + 'px',
+    width: r.width + 'px', opacity: '0.8', pointerEvents: 'none',
+    zIndex: '999', boxShadow: '0 4px 16px rgba(0,0,0,.25)', margin: '0'
+  });
+  document.body.appendChild(touchSnowClone);
+}
+
+function touchSnowDragMove(e) {
+  if (!touchSnowDragId) return;
+  e.preventDefault();
+  const touch = e.touches[0];
+
+  if (touchSnowClone) {
+    touchSnowClone.style.top  = (touch.clientY - 30) + 'px';
+    touchSnowClone.style.left = (touch.clientX - 60) + 'px';
+  }
+
+  if (touchSnowLastTarget) touchSnowLastTarget.classList.remove('drag-over');
+  const el = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.prop-item');
+  if (el && el.dataset.id !== touchSnowDragId) {
+    el.classList.add('drag-over');
+    touchSnowLastTarget = el;
+  } else {
+    touchSnowLastTarget = null;
+  }
+}
+
+function touchSnowDragEnd(e) {
+  if (!touchSnowDragId) return;
+
+  if (touchSnowClone) { touchSnowClone.remove(); touchSnowClone = null; }
+  document.querySelectorAll('.prop-item').forEach(el => {
+    el.classList.remove('dragging', 'drag-over');
+  });
+
+  if (touchSnowLastTarget) {
+    const targetId = touchSnowLastTarget.dataset.id;
+    if (targetId && targetId !== touchSnowDragId) {
+      const srcIdx = db.snowProperties.findIndex(p => p.id === touchSnowDragId);
+      const tgtIdx = db.snowProperties.findIndex(p => p.id === targetId);
+      const [moved] = db.snowProperties.splice(srcIdx, 1);
+      db.snowProperties.splice(tgtIdx, 0, moved);
+      reorderSnow();
+      saveDB();
+    }
+    touchSnowLastTarget = null;
+  }
+
+  touchSnowDragId = null;
+  renderSnowPropList();
+}
+
+// ══════════════════════════════════════════
 //  EMPLOYEE / DAILY VIEW
 // ══════════════════════════════════════════
-function todayStr() {
-  const d = new Date();
+function todayStr(d = new Date()) {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${mm}-${dd}`;
@@ -775,62 +1121,55 @@ function unskipProp(date, propId, crewId) {
   saveDB(); renderJobList();
 }
 
-function renderJobList() {
-  const crewId = document.getElementById('emp-crew-select').value;
-  const date = document.getElementById('emp-date').value || todayStr();
-  document.getElementById('emp-date').value = date;
-  const dow = dayName(date);
-  document.getElementById('emp-day-label').textContent = fullDayName(date);
+// Which "scheduled earlier / later this week" sections the crew has expanded.
+// Kept here so a re-render (e.g. a live update from Firebase) doesn't collapse them.
+let otherOpen = { earlier: false, later: false };
 
-  const allProps = [...db.properties]
-    .filter(p => !p.deleted && p.crewId === crewId && (p.days || []).includes(dow))
-    .sort((a, b) => a.order - b.order);
+// One property card. `schedDate` is the date the property is SCHEDULED for; the log is
+// filed under it. The actual start/stop dates are stored on the log itself, so a property
+// cut on a different day than scheduled shows up flagged with the real date.
+function jobCardHTML(p, num, schedDate, crewId, otherDay) {
+  const skipped = !!(db.skips || {})[skipKey(schedDate, p.id, crewId)];
+  const key = logKey(schedDate, p.id, crewId);
+  const log = (db.logs || {})[key] || {};
+  const hasStart = !!log.start;
+  const hasEnd = !!log.end;
+  const status = skipped ? 'skipped' : hasEnd ? 'done' : hasStart ? 'active' : '';
+  const numClass = skipped ? 'skipped' : hasEnd ? 'done' : hasStart ? 'active' : '';
+  const offSched = hasStart && log.startDate && log.startDate !== schedDate;
 
-  const container = document.getElementById('job-list');
-  if (!allProps.length) {
-    container.innerHTML = '<div class="card" style="color:var(--gray);text-align:center;padding:30px;">No properties scheduled for this crew on ' + dow + '.</div>';
-    return;
+  const startLabel = hasStart ? `<span class="filled">▶ ${fullStamp(log.startDate, log.start)}</span>` : `<span>▶ --:--</span>`;
+  const endLabel   = hasEnd   ? `<span class="filled">■ ${fullStamp(log.endDate, log.end)}</span>`   : `<span>■ --:--</span>`;
+  const duration   = hasStart && hasEnd ? `<span class="filled">⏱ ${visitDurStr(log, schedDate)}</span>` : '';
+
+  let actions = '';
+  if (skipped) {
+    actions = `<button class="btn btn-green btn-sm" onclick="unskipProp('${schedDate}','${p.id}','${crewId}')">↺ Restore</button>`;
+  } else if (!hasStart) {
+    actions = `<button class="btn btn-green btn-sm" onclick="logStart('${key}')">▶ Start</button>`;
+  } else if (!hasEnd) {
+    actions = `
+      <button class="btn btn-orange btn-sm" onclick="logEnd('${key}')">■ Stop</button>
+      <button class="btn btn-gray btn-sm" onclick="resetLog('${key}')">↺ Reset</button>`;
+  } else {
+    actions = `<button class="btn btn-gray btn-sm" onclick="resetLog('${key}')">↺ Reset</button>`;
   }
 
-  container.innerHTML = allProps.map((p, i) => {
-    const skipped = !!(db.skips || {})[skipKey(date, p.id, crewId)];
-    const key = logKey(date, p.id, crewId);
-    const log = (db.logs || {})[key] || {};
-    const hasStart = !!log.start;
-    const hasEnd = !!log.end;
-    const status = skipped ? 'skipped' : hasEnd ? 'done' : hasStart ? 'active' : '';
-    const numClass = skipped ? 'skipped' : hasEnd ? 'done' : hasStart ? 'active' : '';
-
-    const startLabel = hasStart ? `<span class="filled">▶ ${log.start}</span>` : `<span>▶ --:--</span>`;
-    const endLabel   = hasEnd   ? `<span class="filled">■ ${log.end}</span>`   : `<span>■ --:--</span>`;
-    const duration   = hasStart && hasEnd ? `<span class="filled">⏱ ${calcDuration(log.start, log.end)}</span>` : '';
-
-    let actions = '';
-    if (skipped) {
-      actions = `<button class="btn btn-green btn-sm" onclick="unskipProp('${date}','${p.id}','${crewId}')">↺ Restore</button>`;
-    } else if (!hasStart) {
-      actions = `<button class="btn btn-green btn-sm" onclick="logStart('${key}')">▶ Start</button>`;
-    } else if (!hasEnd) {
-      actions = `
-        <button class="btn btn-orange btn-sm" onclick="logEnd('${key}')">■ Stop</button>
-        <button class="btn btn-gray btn-sm" onclick="resetLog('${key}')">↺ Reset</button>`;
-    } else {
-      actions = `<button class="btn btn-gray btn-sm" onclick="resetLog('${key}')">↺ Reset</button>`;
-    }
-
-    return `<div class="job-card status-${status}">
+  return `<div class="job-card status-${status}">
       <div class="job-top">
-        <div class="job-num ${numClass}">${i + 1}</div>
+        <div class="job-num ${numClass}">${num}</div>
         <div>
           <div class="job-title">${esc(p.name)}</div>
           <div class="job-addr">${esc(p.address)}</div>
+          ${otherDay ? `<div style="font-size:.8rem;color:var(--blue);font-weight:600;margin-top:2px;">📅 Scheduled ${shortDate(schedDate)}</div>` : ''}
           ${p.notes ? `<div style="font-size:.8rem;color:var(--orange);margin-top:2px;">📌 ${esc(p.notes)}</div>` : ''}
         </div>
       </div>
+      ${offSched ? `<div style="font-size:.82rem;color:var(--orange);font-weight:600;margin-bottom:8px;">⚠ Off schedule — scheduled ${shortDate(schedDate)}, started ${shortDate(log.startDate)}</div>` : ''}
       ${!skipped ? `<div class="job-times">${startLabel}${endLabel}${duration}</div>` : '<div style="font-size:.85rem;color:#aaa;margin-bottom:10px;font-style:italic;">Inactive this week</div>'}
       <div class="job-actions">
         ${actions}
-        ${!skipped ? `<button class="btn btn-red btn-sm" style="margin-left:auto;" onclick="skipProp('${date}','${p.id}','${crewId}')">⊘ Skip Week</button>` : ''}
+        ${!skipped ? `<button class="btn btn-red btn-sm" style="margin-left:auto;" onclick="skipProp('${schedDate}','${p.id}','${crewId}')">⊘ Skip Week</button>` : ''}
       </div>
       ${!skipped ? `<div style="margin-top:10px;">
         <input type="text" maxlength="120" placeholder="Add a note…"
@@ -839,21 +1178,123 @@ function renderJobList() {
           oninput="saveNote('${key}', this.value)">
       </div>` : ''}
     </div>`;
-  }).join('');
 }
 
-function nowTime() {
-  const now = new Date();
+function renderJobList() {
+  const crewId = document.getElementById('emp-crew-select').value;
+  const date = document.getElementById('emp-date').value || todayStr();
+  document.getElementById('emp-date').value = date;
+  const dow = dayName(date);
+  document.getElementById('emp-day-label').textContent = fullDayName(date);
+
+  const crewProps = [...db.properties]
+    .filter(p => !p.deleted && p.crewId === crewId)
+    .sort((a, b) => a.order - b.order);
+  const todays = crewProps.filter(p => (p.days || []).includes(dow));
+
+  // Properties scheduled on OTHER days of this same week, so the crew can log a property
+  // that was cut on a different day than scheduled (late, or early).
+  //   earlier = scheduled before this date and not finished yet (or worked on this date)
+  //   later   = scheduled after this date
+  const weekMon = weekStart(date);
+  const weekDates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i));
+  const earlier = [], later = [];
+  weekDates.forEach(sd => {
+    if (sd === date) return;
+    const sdow = dayName(sd);
+    crewProps.forEach(p => {
+      if (!(p.days || []).includes(sdow)) return;
+      if ((db.skips || {})[skipKey(sd, p.id, crewId)]) return;
+      const log = (db.logs || {})[logKey(sd, p.id, crewId)] || {};
+      // keep an earlier-scheduled property visible once it's finished if it was worked on
+      // THIS date, so the crew can still see (and reset) what they just did
+      if (sd < date) { if (!log.end || log.startDate === date) earlier.push({ p, sd, unfinished: !log.end }); }
+      else later.push({ p, sd, unfinished: false });
+    });
+  });
+
+  const section = (id, title, items) => !items.length ? '' : `
+    <details class="card" ${otherOpen[id] ? 'open' : ''} ontoggle="otherOpen.${id} = this.open">
+      <summary style="cursor:pointer;font-weight:700;color:var(--gray);">${title} (${items.length})${id === 'earlier' ? (items.some(i => i.unfinished) ? ` — <span style="color:var(--orange);">${items.filter(i => i.unfinished).length} not finished</span>` : ' — all done') : ''}</summary>
+      <p style="font-size:.8rem;color:var(--gray);margin:8px 0 12px;">Starting one of these records today's real date, and it's flagged as off schedule.</p>
+      ${items.map((it, i) => jobCardHTML(it.p, i + 1, it.sd, crewId, true)).join('')}
+    </details>`;
+
+  const main = todays.length
+    ? todays.map((p, i) => jobCardHTML(p, i + 1, date, crewId, false)).join('')
+    : '<div class="card" style="color:var(--gray);text-align:center;padding:30px;">No properties scheduled for this crew on ' + dow + '.</div>';
+
+  document.getElementById('job-list').innerHTML =
+    main + section('earlier', 'Scheduled earlier this week', earlier) + section('later', 'Scheduled later this week', later);
+}
+
+// ── Date-aware time helpers ──
+// Every start/stop is stored with its own date (startDate / endDate, YYYY-MM-DD).
+// Logs saved before dates were recorded have none; for those we assume the date the log
+// is filed under (keyDate), which is exactly how they were treated before.
+function nowStamp() {
+  const n = new Date();
+  return { date: todayStr(n), time: nowTime(n) };
+}
+
+function timeToMin(t) {
+  if (!t) return 0;
+  const [time, ampm] = String(t).trim().split(/\s+/);
+  let [h, m] = time.split(':').map(Number);
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return h * 60 + m;
+}
+
+function stampMin(dateStr, t) {
+  const [y, mo, d] = dateStr.split('-').map(Number);
+  return Math.round(Date.UTC(y, mo - 1, d) / 60000) + timeToMin(t);
+}
+
+// Minutes between a log/visit's start and stop (null if either is missing).
+function visitDiff(v, keyDate) {
+  if (!v || !v.start || !v.end) return null;
+  const kd = keyDate || '1970-01-01';
+  const sd = v.startDate || kd;
+  const ed = v.endDate || v.startDate || kd;
+  return stampMin(ed, v.end) - stampMin(sd, v.start);
+}
+
+function fmtMin(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+function visitDurStr(v, keyDate) {
+  const d = visitDiff(v, keyDate);
+  return d === null || d < 0 ? '?' : fmtMin(d);
+}
+
+function shortDate(dateStr) { // "Wed 11/4"
+  const [, m, d] = dateStr.split('-').map(Number);
+  return `${dayName(dateStr)} ${m}/${d}`;
+}
+
+// "Wed 11/4 8:15 AM" (or just the time for old logs that have no date)
+function fullStamp(date, time) { return date ? `${shortDate(date)} ${time}` : time; }
+
+// Like fullStamp, but drops the date when it matches refDate (used inside summary cells)
+function stampLabel(date, time, refDate) { return date && date !== refDate ? `${shortDate(date)} ${time}` : time; }
+
+function nowTime(now = new Date()) {
   return now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 function logStart(key) {
-  db.logs[key] = { start: nowTime() };
+  const n = nowStamp();
+  db.logs[key] = { start: n.time, startDate: n.date };
   saveDB(); renderJobList();
 }
 function logEnd(key) {
   if (!db.logs[key]) db.logs[key] = {};
-  db.logs[key].end = nowTime();
+  const n = nowStamp();
+  db.logs[key].end = n.time;
+  db.logs[key].endDate = n.date;
   saveDB(); renderJobList();
 }
 function resetLog(key) {
@@ -880,6 +1321,150 @@ function calcDuration(start, end) {
   if (diff < 0) return '?';
   const h = Math.floor(diff / 60), m = diff % 60;
   return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ══════════════════════════════════════════
+//  SNOW DAILY VIEW
+//  (snow properties aren't tied to weekly service days —
+//   every active property for the crew shows up regardless of date;
+//   "skip" here means "not serviced today", not "skip the whole week")
+// ══════════════════════════════════════════
+function snowLogKey(date, propId, crewId) { return `snow_${date}_${propId}_${crewId}`; }
+function snowSkipKey(date, propId, crewId) { return `snowskip_${date}_${propId}_${crewId}`; }
+
+function skipSnowProp(date, propId, crewId) {
+  if (!confirm('Mark this property as not serviced today?')) return;
+  db.snowSkips[snowSkipKey(date, propId, crewId)] = true;
+  saveDB(); renderSnowJobList();
+}
+function unskipSnowProp(date, propId, crewId) {
+  delete db.snowSkips[snowSkipKey(date, propId, crewId)];
+  saveDB(); renderSnowJobList();
+}
+
+const SNOW_SERVICES = ['Plow','Salt','Walkway'];
+
+function snowVisitDurationMin(v, keyDate) {
+  const d = visitDiff(v, keyDate);
+  return d !== null && d > 0 ? d : 0;
+}
+
+function renderSnowServiceCheckboxes(key, vi, checkedServices) {
+  return `<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:.85rem;color:var(--gray);">
+    ${SNOW_SERVICES.map(s => `<label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+      <input type="checkbox" ${checkedServices.includes(s) ? 'checked' : ''} onchange="toggleSnowVisitService('${key}',${vi},'${s}',this.checked)"> ${s}
+    </label>`).join('')}
+  </div>`;
+}
+
+function renderSnowJobList() {
+  const crewId = document.getElementById('snow-crew-select').value;
+  const date = document.getElementById('snow-date').value || todayStr();
+  document.getElementById('snow-date').value = date;
+  document.getElementById('snow-day-label').textContent = fullDayName(date);
+
+  const allProps = [...db.snowProperties]
+    .filter(p => !p.deleted && p.crewId === crewId)
+    .sort((a, b) => a.order - b.order);
+
+  const container = document.getElementById('snow-job-list');
+  if (!allProps.length) {
+    container.innerHTML = '<div class="card" style="color:var(--gray);text-align:center;padding:30px;">No snow properties assigned to this crew.</div>';
+    return;
+  }
+
+  container.innerHTML = allProps.map((p, i) => {
+    const skipped = !!(db.snowSkips || {})[snowSkipKey(date, p.id, crewId)];
+    const key = snowLogKey(date, p.id, crewId);
+    const log = (db.snowLogs || {})[key] || {};
+    const visits = log.visits || [];
+    const activeIdx = visits.findIndex(v => !v.end);
+    const hasActive = activeIdx !== -1;
+    const status = skipped ? 'skipped' : hasActive ? 'active' : visits.length ? 'done' : '';
+    const numClass = status;
+
+    const visitRows = visits.map((v, vi) => `
+      <div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;${v.end ? '' : 'border-color:var(--orange);background:#fff8f2;'}">
+        <div class="job-times" style="margin-bottom:0;">
+          <span style="font-size:.78rem;color:var(--gray);font-weight:600;">Visit ${vi + 1}</span>
+          <span class="filled">▶ ${fullStamp(v.startDate, v.start)}</span>
+          ${v.end ? `<span class="filled">■ ${fullStamp(v.endDate, v.end)}</span><span class="filled">⏱ ${visitDurStr(v, date)}</span>` : `<span style="color:var(--orange);font-style:italic;">In progress</span>`}
+          <button class="btn btn-gray btn-sm" style="margin-left:auto;" onclick="removeSnowVisit('${key}',${vi})">✕</button>
+        </div>
+        ${renderSnowServiceCheckboxes(key, vi, v.services || [])}
+      </div>`).join('');
+
+    let actions = '';
+    if (skipped) {
+      actions = `<button class="btn btn-green btn-sm" onclick="unskipSnowProp('${date}','${p.id}','${crewId}')">↺ Restore</button>`;
+    } else if (hasActive) {
+      actions = `<button class="btn btn-orange btn-sm" onclick="logSnowEnd('${key}')">■ Stop</button>`;
+    } else {
+      actions = `<button class="btn btn-green btn-sm" onclick="logSnowStart('${key}')">▶ ${visits.length ? 'Start Another Visit' : 'Start'}</button>`;
+    }
+
+    return `<div class="job-card status-${status}">
+      <div class="job-top">
+        <div class="job-num ${numClass}">${i + 1}</div>
+        <div>
+          <div class="job-title">${esc(p.name)}</div>
+          <div class="job-addr">${esc(p.address)}</div>
+          ${p.notes ? `<div style="font-size:.8rem;color:var(--orange);margin-top:2px;">📌 ${esc(p.notes)}</div>` : ''}
+        </div>
+      </div>
+      ${skipped ? '<div style="font-size:.85rem;color:#aaa;margin-bottom:10px;font-style:italic;">Not serviced today</div>' : ''}
+      ${!skipped && visitRows ? `<div style="margin-bottom:10px;">${visitRows}</div>` : ''}
+      ${!skipped ? `<div class="job-actions">
+        ${actions}
+        <button class="btn btn-red btn-sm" style="margin-left:auto;" onclick="skipSnowProp('${date}','${p.id}','${crewId}')">⊘ Skip Today</button>
+      </div>` : ''}
+      ${!skipped ? `<div style="margin-top:10px;">
+        <input type="text" maxlength="120" placeholder="Add a note…"
+          value="${esc(log.note || '')}"
+          style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:.85rem;"
+          oninput="saveSnowNote('${key}', this.value)">
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function logSnowStart(key) {
+  if (!db.snowLogs[key]) db.snowLogs[key] = {};
+  if (!db.snowLogs[key].visits) db.snowLogs[key].visits = [];
+  if (db.snowLogs[key].visits.some(v => !v.end)) return; // a visit is already in progress
+  const n = nowStamp();
+  db.snowLogs[key].visits.push({ start: n.time, startDate: n.date, end: null, services: [] });
+  saveDB(); renderSnowJobList();
+}
+function logSnowEnd(key) {
+  const visits = db.snowLogs[key]?.visits || [];
+  const active = [...visits].reverse().find(v => !v.end);
+  if (!active) return;
+  const n = nowStamp();
+  active.end = n.time;
+  active.endDate = n.date;
+  saveDB(); renderSnowJobList();
+}
+function removeSnowVisit(key, vi) {
+  if (!confirm('Remove this visit?')) return;
+  const visits = db.snowLogs[key]?.visits;
+  if (!visits) return;
+  visits.splice(vi, 1);
+  saveDB(); renderSnowJobList();
+}
+function toggleSnowVisitService(key, vi, service, checked) {
+  const visit = db.snowLogs[key]?.visits?.[vi];
+  if (!visit) return;
+  const services = new Set(visit.services || []);
+  if (checked) services.add(service); else services.delete(service);
+  visit.services = [...services];
+  saveDB();
+}
+
+function saveSnowNote(key, value) {
+  if (!db.snowLogs[key]) db.snowLogs[key] = {};
+  db.snowLogs[key].note = value.trim();
+  saveDB();
 }
 
 // ══════════════════════════════════════════
@@ -918,15 +1503,6 @@ function renderSummary() {
 
   const props = [...activeProps, ...deletedWithLogs];
 
-  const toMin = t => {
-    if (!t) return null;
-    const [time, ampm] = t.split(' ');
-    let [h, m] = time.split(':').map(Number);
-    if (ampm === 'PM' && h !== 12) h += 12;
-    if (ampm === 'AM' && h === 12) h = 0;
-    return h * 60 + m;
-  };
-
   let grandTotal = 0;
 
   const rows = props.map(p => {
@@ -938,12 +1514,15 @@ function renderSummary() {
       if (skipped) return `<td style="text-align:center;font-size:.78rem;color:#999;font-style:italic;background:#f5f5f5;border-left:3px solid #ccc;">Skipped</td>`;
       const key = logKey(d, p.id, crewId);
       const log = db.logs[key] || {};
+      const off = !!(log.start && log.startDate && log.startDate !== d);
+      const offStyle = off ? 'border-left:3px solid var(--orange);' : '';
+      const startTxt = stampLabel(log.startDate, log.start, d);
       if (log.start && log.end) {
-        const mins = (toMin(log.end) || 0) - (toMin(log.start) || 0);
+        const mins = visitDiff(log, d);
         if (mins > 0) propTotal += mins;
-        return `<td style="text-align:center;font-size:.82rem;">${log.start}<br>${log.end}<br><strong>${calcDuration(log.start,log.end)}</strong></td>`;
+        return `<td style="text-align:center;font-size:.82rem;${offStyle}">${startTxt}<br>${stampLabel(log.endDate, log.end, log.startDate || d)}<br><strong>${visitDurStr(log, d)}</strong></td>`;
       } else if (log.start) {
-        return `<td style="text-align:center;font-size:.82rem;color:var(--orange);">${log.start}<br><em>In progress</em></td>`;
+        return `<td style="text-align:center;font-size:.82rem;color:var(--orange);${offStyle}">${startTxt}<br><em>In progress</em></td>`;
       }
       return `<td style="text-align:center;color:#bbb;">—</td>`;
     });
@@ -971,7 +1550,8 @@ function renderSummary() {
         <thead><tr><th>Property</th>${dayHeaders}<th>Total</th></tr></thead>
         <tbody>${rows.join('')}</tbody>
         <tfoot><tr class="total-row"><td>TOTAL</td>${dates.map(()=>'<td></td>').join('')}<td style="text-align:center;">${grandStr}</td></tr></tfoot>
-      </table>` : '<p style="color:var(--gray);">No properties for this crew.</p>'}
+      </table>
+      <p style="font-size:.78rem;color:var(--gray);margin-top:8px;">Orange edge = started on a different day than scheduled; the actual date is shown.</p>` : '<p style="color:var(--gray);">No properties for this crew.</p>'}
     </div>`;
 }
 
@@ -985,20 +1565,11 @@ function buildWorkbook() {
   const crew = db.crews.find(c => c.id === crewId);
   const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i));
 
-  const toMin = t => {
-    if (!t) return null;
-    const [time, ampm] = t.split(' ');
-    let [h, m] = time.split(':').map(Number);
-    if (ampm === 'PM' && h !== 12) h += 12;
-    if (ampm === 'AM' && h === 12) h = 0;
-    return h * 60 + m;
-  };
-
   const activePropsWB = [...db.properties].filter(p => !p.deleted && p.crewId === crewId).sort((a, b) => a.order - b.order);
   const deletedWithLogsWB = db.properties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => db.logs[logKey(d, p.id, crewId)]?.start));
   const props = [...activePropsWB, ...deletedWithLogsWB];
 
-  const detailRows = [['Date','Day','Client / Property','Address','Crew','Status','Start Time','End Time','Duration (hrs)','Property Notes','Daily Note']];
+  const detailRows = [['Date','Day','Client / Property','Address','Crew','Status','Start Time','End Time','Duration (hrs)','Property Notes','Daily Note','Start Date','End Date','Off Schedule']];
   dates.forEach(d => {
     const dow = dayName(d);
     props.forEach(p => {
@@ -1006,10 +1577,11 @@ function buildWorkbook() {
       const skipped = !!(db.skips || {})[skipKey(d, p.id, crewId)];
       const key = logKey(d, p.id, crewId);
       const log = db.logs[key] || {};
-      const startM = toMin(log.start), endM = toMin(log.end);
-      const durHrs = (!skipped && startM !== null && endM !== null && endM > startM) ? +((endM - startM) / 60).toFixed(2) : '';
+      const diff = visitDiff(log, d);
+      const durHrs = (!skipped && diff !== null && diff > 0) ? +(diff / 60).toFixed(2) : '';
+      const offSched = !skipped && log.start && log.startDate && log.startDate !== d;
       const status = skipped ? 'Skipped' : (log.start && log.end ? 'Done' : log.start ? 'In Progress' : '');
-      detailRows.push([d, dow, p.name, p.address, crew?.name || '', status, skipped ? '' : (log.start || ''), skipped ? '' : (log.end || ''), durHrs, p.notes || '', skipped ? '' : (log.note || '')]);
+      detailRows.push([d, dow, p.name, p.address, crew?.name || '', status, skipped ? '' : (log.start || ''), skipped ? '' : (log.end || ''), durHrs, p.notes || '', skipped ? '' : (log.note || ''), skipped ? '' : (log.startDate || ''), skipped ? '' : (log.endDate || ''), offSched ? 'Yes' : '']);
     });
   });
 
@@ -1023,8 +1595,8 @@ function buildWorkbook() {
       if (!!(db.skips || {})[skipKey(d, p.id, crewId)]) { skippedWeek = true; return; }
       const key = logKey(d, p.id, crewId);
       const log = db.logs[key] || {};
-      const s = toMin(log.start), e = toMin(log.end);
-      if (s !== null && e !== null && e > s) { total += (e - s); days++; }
+      const diff = visitDiff(log, d);
+      if (diff !== null && diff > 0) { total += diff; days++; }
     });
     sumRows.push([p.name, p.address, crew?.name || '', +(total/60).toFixed(2), days, skippedWeek ? 'Skipped' : '']);
   });
@@ -1032,7 +1604,7 @@ function buildWorkbook() {
   const wb = XLSX.utils.book_new();
   const ws1 = XLSX.utils.aoa_to_sheet(detailRows);
   const ws2 = XLSX.utils.aoa_to_sheet(sumRows);
-  ws1['!cols'] = [12,8,22,28,12,10,10,10,14,20,20].map(w => ({ wch: w }));
+  ws1['!cols'] = [12,8,22,28,12,10,10,10,14,20,20,12,12,12].map(w => ({ wch: w }));
   ws2['!cols'] = [22,28,12,16,14,10].map(w => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws1, 'Time Detail');
   XLSX.utils.book_append_sheet(wb, ws2, 'Weekly Summary');
@@ -1075,15 +1647,6 @@ function emailSummary() {
   const crew = db.crews.find(c => c.id === crewId);
   const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i));
 
-  const toMin = t => {
-    if (!t) return null;
-    const [time, ampm] = t.split(' ');
-    let [h, m] = time.split(':').map(Number);
-    if (ampm === 'PM' && h !== 12) h += 12;
-    if (ampm === 'AM' && h === 12) h = 0;
-    return h * 60 + m;
-  };
-
   const activePropsEM = [...db.properties].filter(p => !p.deleted && p.crewId === crewId).sort((a, b) => a.order - b.order);
   const deletedWithLogsEM = db.properties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => db.logs[logKey(d, p.id, crewId)]?.start));
   const props = [...activePropsEM, ...deletedWithLogsEM];
@@ -1102,12 +1665,15 @@ function emailSummary() {
     dayProps.forEach((p, i) => {
       const key = logKey(d, p.id, crewId);
       const log = db.logs[key] || {};
-      const s = toMin(log.start), e = toMin(log.end);
-      const dur = (s !== null && e !== null && e > s) ? e - s : null;
+      const diff = visitDiff(log, d);
+      const dur = (diff !== null && diff > 0) ? diff : null;
       if (dur) grandTotal += dur;
-      const durStr = dur ? calcDuration(log.start, log.end) : '—';
-      body += `  ${i+1}. ${p.name}\n`;
-      body += `     Start: ${log.start || '—'}  |  Stop: ${log.end || '—'}  |  Duration: ${durStr}\n`;
+      const durStr = dur ? fmtMin(dur) : '—';
+      const stTxt = log.start ? fullStamp(log.startDate, log.start) : '—';
+      const enTxt = log.end ? fullStamp(log.endDate, log.end) : '—';
+      const offTxt = (log.start && log.startDate && log.startDate !== d) ? '  [off schedule]' : '';
+      body += `  ${i+1}. ${p.name}${offTxt}\n`;
+      body += `     Start: ${stTxt}  |  Stop: ${enTxt}  |  Duration: ${durStr}\n`;
     });
     body += '\n';
   });
@@ -1122,26 +1688,264 @@ function emailSummary() {
 }
 
 // ══════════════════════════════════════════
+//  SNOW SUMMARY VIEW
+// ══════════════════════════════════════════
+function renderSnowSummary() {
+  const raw = document.getElementById('snow-sum-week').value || todayStr();
+  const weekMon = weekStart(raw);
+  document.getElementById('snow-sum-week').value = weekMon;
+  const crewId = document.getElementById('snow-sum-crew').value;
+  const crew = db.crews.find(c => c.id === crewId);
+
+  const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i)); // Mon–Sat
+  const activeProps = [...db.snowProperties]
+    .filter(p => !p.deleted && p.crewId === crewId)
+    .sort((a, b) => a.order - b.order);
+
+  const deletedWithLogs = db.snowProperties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => {
+    const key = snowLogKey(d, p.id, crewId);
+    return (db.snowLogs[key]?.visits || []).length;
+  }));
+
+  const props = [...activeProps, ...deletedWithLogs];
+
+  let grandTotal = 0;
+
+  const rows = props.map(p => {
+    let propTotal = 0;
+    const cells = dates.map(d => {
+      const skipped = !!(db.snowSkips || {})[snowSkipKey(d, p.id, crewId)];
+      if (skipped) return `<td style="text-align:center;font-size:.78rem;color:#999;font-style:italic;background:#f5f5f5;border-left:3px solid #ccc;">Skipped</td>`;
+      const key = snowLogKey(d, p.id, crewId);
+      const visits = db.snowLogs[key]?.visits || [];
+      if (!visits.length) return `<td style="text-align:center;color:#bbb;">—</td>`;
+      const lines = visits.map(v => {
+        propTotal += snowVisitDurationMin(v, d);
+        const svc = (v.services || []).length ? ` <span style="color:var(--green);">(${esc(v.services.join(', '))})</span>` : '';
+        const st = stampLabel(v.startDate, v.start, d);
+        return v.end ? `${st}–${stampLabel(v.endDate, v.end, v.startDate || d)} <strong>${visitDurStr(v, d)}</strong>${svc}` : `<span style="color:var(--orange);">${st}–in progress</span>${svc}`;
+      }).join('<br>');
+      return `<td style="text-align:center;font-size:.78rem;">${lines}</td>`;
+    });
+    grandTotal += propTotal;
+    const h = Math.floor(propTotal/60), m = propTotal%60;
+    const totStr = propTotal ? (h ? `${h}h ${m}m` : `${m}m`) : '—';
+    const deletedLabel = p.deleted ? ` <span style="font-size:.72rem;color:#aaa;font-style:italic;">(removed)</span>` : '';
+    return `<tr>
+      <td><strong>${esc(p.name)}</strong>${deletedLabel}<br><span style="font-size:.78rem;color:var(--gray);">${esc(p.address)}</span></td>
+      ${cells.join('')}
+      <td style="text-align:center;font-weight:700;">${totStr}</td>
+    </tr>`;
+  });
+
+  const grandH = Math.floor(grandTotal/60), grandM = grandTotal%60;
+  const grandStr = grandTotal ? (grandH ? `${grandH}h ${grandM}m` : `${grandM}m`) : '—';
+
+  const dayHeaders = dates.map(d => `<th>${dayName(d)}<br><span style="font-size:.75rem;font-weight:400;">${d.slice(5)}</span></th>`).join('');
+
+  document.getElementById('snow-summary-content').innerHTML = `
+    <div class="card" style="overflow-x:auto;">
+      <h2>${crew ? esc(crew.name) : ''} — Week of ${weekMon}</h2>
+      ${rows.length ? `
+      <table class="summary-table">
+        <thead><tr><th>Property</th>${dayHeaders}<th>Total</th></tr></thead>
+        <tbody>${rows.join('')}</tbody>
+        <tfoot><tr class="total-row"><td>TOTAL</td>${dates.map(()=>'<td></td>').join('')}<td style="text-align:center;">${grandStr}</td></tr></tfoot>
+      </table>` : '<p style="color:var(--gray);">No snow properties for this crew.</p>'}
+    </div>`;
+}
+
+// ══════════════════════════════════════════
+//  SNOW EXCEL EXPORT
+// ══════════════════════════════════════════
+function buildSnowWorkbook() {
+  const raw = document.getElementById('snow-sum-week').value || todayStr();
+  const weekMon = weekStart(raw);
+  const crewId = document.getElementById('snow-sum-crew').value;
+  const crew = db.crews.find(c => c.id === crewId);
+  const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i));
+
+  const activePropsWB = [...db.snowProperties].filter(p => !p.deleted && p.crewId === crewId).sort((a, b) => a.order - b.order);
+  const deletedWithLogsWB = db.snowProperties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => (db.snowLogs[snowLogKey(d, p.id, crewId)]?.visits || []).length));
+  const props = [...activePropsWB, ...deletedWithLogsWB];
+
+  const detailRows = [['Date','Day','Client / Property','Address','Crew','Visit #','Status','Start Time','End Time','Duration (hrs)','Services Completed','Property Notes','Daily Note','Start Date','End Date']];
+  dates.forEach(d => {
+    const dow = dayName(d);
+    props.forEach(p => {
+      const skipped = !!(db.snowSkips || {})[snowSkipKey(d, p.id, crewId)];
+      const key = snowLogKey(d, p.id, crewId);
+      const log = db.snowLogs[key] || {};
+      const visits = log.visits || [];
+      if (skipped) {
+        detailRows.push([d, dow, p.name, p.address, crew?.name || '', '', 'Skipped', '', '', '', '', p.notes || '', '', '', '']);
+        return;
+      }
+      if (!visits.length) return; // only list days actually touched or skipped
+      visits.forEach((v, vi) => {
+        const durHrs = v.end ? +(snowVisitDurationMin(v, d) / 60).toFixed(2) : '';
+        const status = v.end ? 'Done' : 'In Progress';
+        detailRows.push([d, dow, p.name, p.address, crew?.name || '', vi + 1, status, v.start || '', v.end || '', durHrs, (v.services || []).join(', '), p.notes || '', log.note || '', v.startDate || '', v.endDate || '']);
+      });
+    });
+  });
+
+  const sumRows = [['Client / Property','Address','Crew','Total Hours (week)','Days Serviced','Total Visits','Status']];
+  props.forEach(p => {
+    let total = 0, days = 0, visitCount = 0;
+    let skippedAnyDay = false;
+    dates.forEach(d => {
+      if (!!(db.snowSkips || {})[snowSkipKey(d, p.id, crewId)]) { skippedAnyDay = true; return; }
+      const visits = db.snowLogs[snowLogKey(d, p.id, crewId)]?.visits || [];
+      if (visits.length) days++;
+      visits.forEach(v => { total += snowVisitDurationMin(v, d); if (v.end) visitCount++; });
+    });
+    sumRows.push([p.name, p.address, crew?.name || '', +(total/60).toFixed(2), days, visitCount, skippedAnyDay ? 'Some Days Skipped' : '']);
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.aoa_to_sheet(detailRows);
+  const ws2 = XLSX.utils.aoa_to_sheet(sumRows);
+  ws1['!cols'] = [12,8,22,28,12,8,10,10,10,14,18,20,20,12,12].map(w => ({ wch: w }));
+  ws2['!cols'] = [22,28,12,16,14,12,18].map(w => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, ws1, 'Snow Time Detail');
+  XLSX.utils.book_append_sheet(wb, ws2, 'Snow Weekly Summary');
+
+  const filename = `NEL Snow Run Sheet ${weekMon.replace(/-/g,'')}.xlsx`;
+  return { wb, filename };
+}
+
+function exportSnowExcel() {
+  const { wb, filename } = buildSnowWorkbook();
+  XLSX.writeFile(wb, filename);
+}
+
+async function saveSnowToLocation() {
+  const { wb, filename } = buildSnowWorkbook();
+  if (!wb) return;
+  if (!window.showSaveFilePicker) {
+    alert('Your browser does not support "Save to location". Use the Download button instead.');
+    return;
+  }
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: filename,
+      types: [{ description: 'Excel Workbook', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }]
+    });
+    const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const writable = await handle.createWritable();
+    await writable.write(new Blob([wbArray], { type: 'application/octet-stream' }));
+    await writable.close();
+    alert('File saved successfully!');
+  } catch (e) {
+    if (e.name !== 'AbortError') alert('Could not save file: ' + e.message);
+  }
+}
+
+function emailSnowSummary() {
+  const raw = document.getElementById('snow-sum-week').value || todayStr();
+  const weekMon = weekStart(raw);
+  const crewId = document.getElementById('snow-sum-crew').value;
+  const crew = db.crews.find(c => c.id === crewId);
+  const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i));
+
+  const activePropsEM = [...db.snowProperties].filter(p => !p.deleted && p.crewId === crewId).sort((a, b) => a.order - b.order);
+  const deletedWithLogsEM = db.snowProperties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => (db.snowLogs[snowLogKey(d, p.id, crewId)]?.visits || []).length));
+  const props = [...activePropsEM, ...deletedWithLogsEM];
+
+  let body = `NE Landscapes — Snow Weekly Summary\n`;
+  body += `${crew?.name || ''} | Week of ${weekMon}\n`;
+  body += `${'='.repeat(48)}\n\n`;
+
+  let grandTotal = 0;
+
+  dates.forEach(d => {
+    const dow = dayName(d);
+    const dayProps = props.filter(p => {
+      const visits = db.snowLogs[snowLogKey(d, p.id, crewId)]?.visits || [];
+      const skipped = !!(db.snowSkips || {})[snowSkipKey(d, p.id, crewId)];
+      return skipped || visits.length;
+    });
+    if (!dayProps.length) return;
+    body += `${dow} ${d}\n${'-'.repeat(32)}\n`;
+    dayProps.forEach((p, i) => {
+      const skipped = !!(db.snowSkips || {})[snowSkipKey(d, p.id, crewId)];
+      const visits = db.snowLogs[snowLogKey(d, p.id, crewId)]?.visits || [];
+      body += `  ${i+1}. ${p.name}\n`;
+      if (skipped) { body += `     Skipped\n`; return; }
+      visits.forEach((v, vi) => {
+        const dur = snowVisitDurationMin(v, d);
+        if (dur) grandTotal += dur;
+        const durStr = v.end ? visitDurStr(v, d) : '—';
+        body += `     Visit ${vi+1} — Start: ${v.start ? fullStamp(v.startDate, v.start) : '—'}  |  Stop: ${v.end ? fullStamp(v.endDate, v.end) : 'in progress'}  |  Duration: ${durStr}\n`;
+        if ((v.services || []).length) body += `       Services: ${v.services.join(', ')}\n`;
+      });
+    });
+    body += '\n';
+  });
+
+  const gh = Math.floor(grandTotal/60), gm = grandTotal%60;
+  body += `${'='.repeat(48)}\n`;
+  body += `TOTAL HOURS: ${gh ? gh+'h ' : ''}${gm}m\n`;
+
+  const subject = encodeURIComponent(`NEL Snow Run Sheet ${weekMon.replace(/-/g,'')}`);
+  const encodedBody = encodeURIComponent(body);
+  window.location.href = `mailto:?subject=${subject}&body=${encodedBody}`;
+}
+
+// ══════════════════════════════════════════
 //  DROPDOWN POPULATION
 // ══════════════════════════════════════════
-function populateAllDropdowns() { populateOwnerDropdowns(); populateEmpDropdowns(); }
+function populateAllDropdowns() { populateOwnerDropdowns(); populateEmpDropdowns(); populateSnowDropdowns(); }
+
+// Re-fill a <select> without losing what the user picked. These get rebuilt on every
+// live update (each save echoes back from Firebase), which used to snap them back to
+// the first crew.
+function setOptionsKeepValue(sel, html) {
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = html;
+  if (prev !== '' && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+  else if (prev === '' && [...sel.options].some(o => o.value === '')) sel.value = '';
+}
+
+// Changing the date on the Grass or Snow page starts fresh on the first crew.
+function onDailyDateChange(which) {
+  const sel = document.getElementById(which === 'snow' ? 'snow-crew-select' : 'emp-crew-select');
+  if (sel && sel.options.length) sel.value = sel.options[0].value;
+  if (which === 'snow') renderSnowJobList(); else renderJobList();
+}
 
 function populateOwnerDropdowns() {
-  const f = document.getElementById('filter-crew-props');
-  if (f) f.innerHTML = '<option value="">All Crews</option>' + db.crews.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  const crewOpts = db.crews.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  setOptionsKeepValue(document.getElementById('filter-crew-props'), '<option value="">All Crews</option>' + crewOpts);
+  setOptionsKeepValue(document.getElementById('filter-crew-snowprops'), '<option value="">All Crews</option>' + crewOpts);
 }
 
 function populateEmpDropdowns() {
-  const empSel = document.getElementById('emp-crew-select');
-  const sumSel = document.getElementById('sum-crew');
   const opts = db.crews.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-  empSel.innerHTML = opts;
-  sumSel.innerHTML = opts;
+  setOptionsKeepValue(document.getElementById('emp-crew-select'), opts);
+  setOptionsKeepValue(document.getElementById('sum-crew'), opts);
+}
+
+function populateSnowDropdowns() {
+  const opts = db.crews.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  setOptionsKeepValue(document.getElementById('snow-crew-select'), opts);
+  setOptionsKeepValue(document.getElementById('snow-sum-crew'), opts);
 }
 
 // ══════════════════════════════════════════
 //  SETTINGS
 // ══════════════════════════════════════════
+function renderSettings() {
+  document.getElementById('default-tab-select').value = db.defaultTab || 'employee';
+}
+
+function saveDefaultTab() {
+  db.defaultTab = document.getElementById('default-tab-select').value;
+  saveDB();
+}
+
 function savePin() {
   const val = document.getElementById('pin-new').value.trim();
   if (!/^\d{4,6}$/.test(val)) return alert('PIN must be 4–6 digits.');
@@ -1177,11 +1981,19 @@ function rerenderAll() {
     if (focused && focused.tagName === 'INPUT' && focused.closest('#job-list')) return;
     renderJobList();
   }
+  if (activeView === 'view-snow') {
+    const focused = document.activeElement;
+    if (focused && focused.tagName === 'INPUT' && focused.closest('#snow-job-list')) return;
+    renderSnowJobList();
+  }
   if (activeView === 'view-owner') {
     renderPropList();
     renderCrewList();
+    renderSnowPropList();
     const activeTab = document.querySelector('#view-owner [id^="owner-"]:not([style*="display: none"]):not([style*="display:none"])');
     if (activeTab?.id === 'owner-summary') renderSummary();
+    if (activeTab?.id === 'owner-snowsummary') renderSnowSummary();
+    if (activeTab?.id === 'owner-settings') renderSettings();
   }
 }
 
@@ -1191,8 +2003,11 @@ function rerenderAll() {
 (function init() {
   document.getElementById('emp-date').value = todayStr();
   document.getElementById('sum-week').value = weekStart(todayStr());
+  document.getElementById('snow-date').value = todayStr();
+  document.getElementById('snow-sum-week').value = weekStart(todayStr());
   populateEmpDropdowns();
-  renderJobList();
+  populateSnowDropdowns();
+  showView(db.defaultTab === 'snow' ? 'snow' : 'employee');
   initFirebase();
 })();
 </script>
