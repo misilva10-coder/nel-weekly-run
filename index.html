@@ -1491,13 +1491,14 @@ function renderSummary() {
   const crew = db.crews.find(c => c.id === crewId);
 
   const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i)); // Mon–Sat
+  const crewOrder = id => db.crews.findIndex(c => c.id === id);
   const activeProps = [...db.properties]
-    .filter(p => !p.deleted && p.crewId === crewId)
-    .sort((a, b) => a.order - b.order);
+    .filter(p => !p.deleted && (!crewId || p.crewId === crewId))
+    .sort((a, b) => crewId ? a.order - b.order : (crewOrder(a.crewId) - crewOrder(b.crewId) || a.order - b.order));
 
   // Include deleted properties that still have logs in this week
-  const deletedWithLogs = db.properties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => {
-    const key = logKey(d, p.id, crewId);
+  const deletedWithLogs = db.properties.filter(p => p.deleted && (!crewId || p.crewId === crewId) && dates.some(d => {
+    const key = logKey(d, p.id, p.crewId);
     return db.logs[key]?.start;
   }));
 
@@ -1510,9 +1511,9 @@ function renderSummary() {
     const cells = dates.map(d => {
       const dow = dayName(d);
       if (!(p.days || []).includes(dow)) return `<td style="background:#f8f8f8;color:#ccc;text-align:center;">—</td>`;
-      const skipped = !!(db.skips || {})[skipKey(d, p.id, crewId)];
+      const skipped = !!(db.skips || {})[skipKey(d, p.id, p.crewId)];
       if (skipped) return `<td style="text-align:center;font-size:.78rem;color:#999;font-style:italic;background:#f5f5f5;border-left:3px solid #ccc;">Skipped</td>`;
-      const key = logKey(d, p.id, crewId);
+      const key = logKey(d, p.id, p.crewId);
       const log = db.logs[key] || {};
       const off = !!(log.start && log.startDate && log.startDate !== d);
       const offStyle = off ? 'border-left:3px solid var(--orange);' : '';
@@ -1530,8 +1531,9 @@ function renderSummary() {
     const h = Math.floor(propTotal/60), m = propTotal%60;
     const totStr = propTotal ? (h ? `${h}h ${m}m` : `${m}m`) : '—';
     const deletedLabel = p.deleted ? ` <span style="font-size:.72rem;color:#aaa;font-style:italic;">(removed)</span>` : '';
+    const crewLabel = !crewId ? ` · ${esc(db.crews.find(c => c.id === p.crewId)?.name || '')}` : '';
     return `<tr>
-      <td><strong>${esc(p.name)}</strong>${deletedLabel}<br><span style="font-size:.78rem;color:var(--gray);">${esc(p.address)}</span></td>
+      <td><strong>${esc(p.name)}</strong>${deletedLabel}<br><span style="font-size:.78rem;color:var(--gray);">${esc(p.address)}${crewLabel}</span></td>
       ${cells.join('')}
       <td style="text-align:center;font-weight:700;">${totStr}</td>
     </tr>`;
@@ -1544,14 +1546,14 @@ function renderSummary() {
 
   document.getElementById('summary-content').innerHTML = `
     <div class="card" style="overflow-x:auto;">
-      <h2>${crew ? esc(crew.name) : ''} — Week of ${weekMon}</h2>
+      <h2>${crewId ? esc(crew?.name || '') : 'All Crews'} — Week of ${weekMon}</h2>
       ${rows.length ? `
       <table class="summary-table">
         <thead><tr><th>Property</th>${dayHeaders}<th>Total</th></tr></thead>
         <tbody>${rows.join('')}</tbody>
         <tfoot><tr class="total-row"><td>TOTAL</td>${dates.map(()=>'<td></td>').join('')}<td style="text-align:center;">${grandStr}</td></tr></tfoot>
       </table>
-      <p style="font-size:.78rem;color:var(--gray);margin-top:8px;">Orange edge = started on a different day than scheduled; the actual date is shown.</p>` : '<p style="color:var(--gray);">No properties for this crew.</p>'}
+      <p style="font-size:.78rem;color:var(--gray);margin-top:8px;">Orange edge = started on a different day than scheduled; the actual date is shown.</p>` : `<p style="color:var(--gray);">No properties${crewId ? ' for this crew' : ''}.</p>`}
     </div>`;
 }
 
@@ -1562,11 +1564,10 @@ function buildWorkbook() {
   const raw = document.getElementById('sum-week').value || todayStr();
   const weekMon = weekStart(raw);
   const crewId = document.getElementById('sum-crew').value;
-  const crew = db.crews.find(c => c.id === crewId);
   const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i));
 
-  const activePropsWB = [...db.properties].filter(p => !p.deleted && p.crewId === crewId).sort((a, b) => a.order - b.order);
-  const deletedWithLogsWB = db.properties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => db.logs[logKey(d, p.id, crewId)]?.start));
+  const activePropsWB = [...db.properties].filter(p => !p.deleted && (!crewId || p.crewId === crewId)).sort((a, b) => a.order - b.order);
+  const deletedWithLogsWB = db.properties.filter(p => p.deleted && (!crewId || p.crewId === crewId) && dates.some(d => db.logs[logKey(d, p.id, p.crewId)]?.start));
   const props = [...activePropsWB, ...deletedWithLogsWB];
 
   const detailRows = [['Scheduled Date','Scheduled Day','Client / Property','Address','Crew','Status','Start Time','End Time','Duration (hrs)','Property Notes','Daily Note','Actual Start Date','Actual End Date','Off Schedule']];
@@ -1574,31 +1575,33 @@ function buildWorkbook() {
     const dow = dayName(d);
     props.forEach(p => {
       if (!(p.days || []).includes(dow)) return;
-      const skipped = !!(db.skips || {})[skipKey(d, p.id, crewId)];
-      const key = logKey(d, p.id, crewId);
+      const crewName = db.crews.find(c => c.id === p.crewId)?.name || '';
+      const skipped = !!(db.skips || {})[skipKey(d, p.id, p.crewId)];
+      const key = logKey(d, p.id, p.crewId);
       const log = db.logs[key] || {};
       const diff = visitDiff(log, d);
       const durHrs = (!skipped && diff !== null && diff > 0) ? +(diff / 60).toFixed(2) : '';
       const offSched = !skipped && log.start && log.startDate && log.startDate !== d;
       const status = skipped ? 'Skipped' : (log.start && log.end ? 'Done' : log.start ? 'In Progress' : '');
-      detailRows.push([d, dow, p.name, p.address, crew?.name || '', status, skipped ? '' : (log.start || ''), skipped ? '' : (log.end || ''), durHrs, p.notes || '', skipped ? '' : (log.note || ''), skipped ? '' : (log.startDate || ''), skipped ? '' : (log.endDate || ''), offSched ? 'Yes' : '']);
+      detailRows.push([d, dow, p.name, p.address, crewName, status, skipped ? '' : (log.start || ''), skipped ? '' : (log.end || ''), durHrs, p.notes || '', skipped ? '' : (log.note || ''), skipped ? '' : (log.startDate || ''), skipped ? '' : (log.endDate || ''), offSched ? 'Yes' : '']);
     });
   });
 
   const sumRows = [['Client / Property','Address','Crew','Total Hours (week)','Days Serviced','Status']];
   props.forEach(p => {
+    const crewName = db.crews.find(c => c.id === p.crewId)?.name || '';
     let total = 0, days = 0;
     let skippedWeek = false;
     dates.forEach(d => {
       const dow = dayName(d);
       if (!(p.days || []).includes(dow)) return;
-      if (!!(db.skips || {})[skipKey(d, p.id, crewId)]) { skippedWeek = true; return; }
-      const key = logKey(d, p.id, crewId);
+      if (!!(db.skips || {})[skipKey(d, p.id, p.crewId)]) { skippedWeek = true; return; }
+      const key = logKey(d, p.id, p.crewId);
       const log = db.logs[key] || {};
       const diff = visitDiff(log, d);
       if (diff !== null && diff > 0) { total += diff; days++; }
     });
-    sumRows.push([p.name, p.address, crew?.name || '', +(total/60).toFixed(2), days, skippedWeek ? 'Skipped' : '']);
+    sumRows.push([p.name, p.address, crewName, +(total/60).toFixed(2), days, skippedWeek ? 'Skipped' : '']);
   });
 
   const wb = XLSX.utils.book_new();
@@ -1647,12 +1650,12 @@ function emailSummary() {
   const crew = db.crews.find(c => c.id === crewId);
   const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i));
 
-  const activePropsEM = [...db.properties].filter(p => !p.deleted && p.crewId === crewId).sort((a, b) => a.order - b.order);
-  const deletedWithLogsEM = db.properties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => db.logs[logKey(d, p.id, crewId)]?.start));
+  const activePropsEM = [...db.properties].filter(p => !p.deleted && (!crewId || p.crewId === crewId)).sort((a, b) => a.order - b.order);
+  const deletedWithLogsEM = db.properties.filter(p => p.deleted && (!crewId || p.crewId === crewId) && dates.some(d => db.logs[logKey(d, p.id, p.crewId)]?.start));
   const props = [...activePropsEM, ...deletedWithLogsEM];
 
   let body = `NE Landscapes — Weekly Run Summary\n`;
-  body += `${crew?.name || ''} | Week of ${weekMon}\n`;
+  body += `${crewId ? (crew?.name || '') : 'All Crews'} | Week of ${weekMon}\n`;
   body += `${'='.repeat(48)}\n\n`;
 
   let grandTotal = 0;
@@ -1663,7 +1666,7 @@ function emailSummary() {
     if (!dayProps.length) return;
     body += `${dow} ${d}\n${'-'.repeat(32)}\n`;
     dayProps.forEach((p, i) => {
-      const key = logKey(d, p.id, crewId);
+      const key = logKey(d, p.id, p.crewId);
       const log = db.logs[key] || {};
       const diff = visitDiff(log, d);
       const dur = (diff !== null && diff > 0) ? diff : null;
@@ -1672,7 +1675,8 @@ function emailSummary() {
       const stTxt = log.start ? fullStamp(log.startDate, log.start) : '—';
       const enTxt = log.end ? fullStamp(log.endDate, log.end) : '—';
       const offTxt = (log.start && log.startDate && log.startDate !== d) ? '  [off schedule]' : '';
-      body += `  ${i+1}. ${p.name}${offTxt}\n`;
+      const crewTxt = !crewId ? `  (${db.crews.find(c => c.id === p.crewId)?.name || ''})` : '';
+      body += `  ${i+1}. ${p.name}${crewTxt}${offTxt}\n`;
       body += `     Start: ${stTxt}  |  Stop: ${enTxt}  |  Duration: ${durStr}\n`;
     });
     body += '\n';
@@ -1698,12 +1702,13 @@ function renderSnowSummary() {
   const crew = db.crews.find(c => c.id === crewId);
 
   const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i)); // Mon–Sat
+  const crewOrder = id => db.crews.findIndex(c => c.id === id);
   const activeProps = [...db.snowProperties]
-    .filter(p => !p.deleted && p.crewId === crewId)
-    .sort((a, b) => a.order - b.order);
+    .filter(p => !p.deleted && (!crewId || p.crewId === crewId))
+    .sort((a, b) => crewId ? a.order - b.order : (crewOrder(a.crewId) - crewOrder(b.crewId) || a.order - b.order));
 
-  const deletedWithLogs = db.snowProperties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => {
-    const key = snowLogKey(d, p.id, crewId);
+  const deletedWithLogs = db.snowProperties.filter(p => p.deleted && (!crewId || p.crewId === crewId) && dates.some(d => {
+    const key = snowLogKey(d, p.id, p.crewId);
     return (db.snowLogs[key]?.visits || []).length;
   }));
 
@@ -1714,9 +1719,9 @@ function renderSnowSummary() {
   const rows = props.map(p => {
     let propTotal = 0;
     const cells = dates.map(d => {
-      const skipped = !!(db.snowSkips || {})[snowSkipKey(d, p.id, crewId)];
+      const skipped = !!(db.snowSkips || {})[snowSkipKey(d, p.id, p.crewId)];
       if (skipped) return `<td style="text-align:center;font-size:.78rem;color:#999;font-style:italic;background:#f5f5f5;border-left:3px solid #ccc;">Skipped</td>`;
-      const key = snowLogKey(d, p.id, crewId);
+      const key = snowLogKey(d, p.id, p.crewId);
       const visits = db.snowLogs[key]?.visits || [];
       if (!visits.length) return `<td style="text-align:center;color:#bbb;">—</td>`;
       const lines = visits.map(v => {
@@ -1731,8 +1736,9 @@ function renderSnowSummary() {
     const h = Math.floor(propTotal/60), m = propTotal%60;
     const totStr = propTotal ? (h ? `${h}h ${m}m` : `${m}m`) : '—';
     const deletedLabel = p.deleted ? ` <span style="font-size:.72rem;color:#aaa;font-style:italic;">(removed)</span>` : '';
+    const crewLabel = !crewId ? ` · ${esc(db.crews.find(c => c.id === p.crewId)?.name || '')}` : '';
     return `<tr>
-      <td><strong>${esc(p.name)}</strong>${deletedLabel}<br><span style="font-size:.78rem;color:var(--gray);">${esc(p.address)}</span></td>
+      <td><strong>${esc(p.name)}</strong>${deletedLabel}<br><span style="font-size:.78rem;color:var(--gray);">${esc(p.address)}${crewLabel}</span></td>
       ${cells.join('')}
       <td style="text-align:center;font-weight:700;">${totStr}</td>
     </tr>`;
@@ -1745,13 +1751,13 @@ function renderSnowSummary() {
 
   document.getElementById('snow-summary-content').innerHTML = `
     <div class="card" style="overflow-x:auto;">
-      <h2>${crew ? esc(crew.name) : ''} — Week of ${weekMon}</h2>
+      <h2>${crewId ? esc(crew?.name || '') : 'All Crews'} — Week of ${weekMon}</h2>
       ${rows.length ? `
       <table class="summary-table">
         <thead><tr><th>Property</th>${dayHeaders}<th>Total</th></tr></thead>
         <tbody>${rows.join('')}</tbody>
         <tfoot><tr class="total-row"><td>TOTAL</td>${dates.map(()=>'<td></td>').join('')}<td style="text-align:center;">${grandStr}</td></tr></tfoot>
-      </table>` : '<p style="color:var(--gray);">No snow properties for this crew.</p>'}
+      </table>` : `<p style="color:var(--gray);">No snow properties${crewId ? ' for this crew' : ''}.</p>`}
     </div>`;
 }
 
@@ -1762,45 +1768,46 @@ function buildSnowWorkbook() {
   const raw = document.getElementById('snow-sum-week').value || todayStr();
   const weekMon = weekStart(raw);
   const crewId = document.getElementById('snow-sum-crew').value;
-  const crew = db.crews.find(c => c.id === crewId);
   const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i));
 
-  const activePropsWB = [...db.snowProperties].filter(p => !p.deleted && p.crewId === crewId).sort((a, b) => a.order - b.order);
-  const deletedWithLogsWB = db.snowProperties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => (db.snowLogs[snowLogKey(d, p.id, crewId)]?.visits || []).length));
+  const activePropsWB = [...db.snowProperties].filter(p => !p.deleted && (!crewId || p.crewId === crewId)).sort((a, b) => a.order - b.order);
+  const deletedWithLogsWB = db.snowProperties.filter(p => p.deleted && (!crewId || p.crewId === crewId) && dates.some(d => (db.snowLogs[snowLogKey(d, p.id, p.crewId)]?.visits || []).length));
   const props = [...activePropsWB, ...deletedWithLogsWB];
 
   const detailRows = [['Date','Day','Client / Property','Address','Crew','Visit #','Status','Start Time','End Time','Duration (hrs)','Services Completed','Property Notes','Daily Note','Start Date','End Date']];
   dates.forEach(d => {
     const dow = dayName(d);
     props.forEach(p => {
-      const skipped = !!(db.snowSkips || {})[snowSkipKey(d, p.id, crewId)];
-      const key = snowLogKey(d, p.id, crewId);
+      const crewName = db.crews.find(c => c.id === p.crewId)?.name || '';
+      const skipped = !!(db.snowSkips || {})[snowSkipKey(d, p.id, p.crewId)];
+      const key = snowLogKey(d, p.id, p.crewId);
       const log = db.snowLogs[key] || {};
       const visits = log.visits || [];
       if (skipped) {
-        detailRows.push([d, dow, p.name, p.address, crew?.name || '', '', 'Skipped', '', '', '', '', p.notes || '', '', '', '']);
+        detailRows.push([d, dow, p.name, p.address, crewName, '', 'Skipped', '', '', '', '', p.notes || '', '', '', '']);
         return;
       }
       if (!visits.length) return; // only list days actually touched or skipped
       visits.forEach((v, vi) => {
         const durHrs = v.end ? +(snowVisitDurationMin(v, d) / 60).toFixed(2) : '';
         const status = v.end ? 'Done' : 'In Progress';
-        detailRows.push([d, dow, p.name, p.address, crew?.name || '', vi + 1, status, v.start || '', v.end || '', durHrs, (v.services || []).join(', '), p.notes || '', log.note || '', v.startDate || '', v.endDate || '']);
+        detailRows.push([d, dow, p.name, p.address, crewName, vi + 1, status, v.start || '', v.end || '', durHrs, (v.services || []).join(', '), p.notes || '', log.note || '', v.startDate || '', v.endDate || '']);
       });
     });
   });
 
   const sumRows = [['Client / Property','Address','Crew','Total Hours (week)','Days Serviced','Total Visits','Status']];
   props.forEach(p => {
+    const crewName = db.crews.find(c => c.id === p.crewId)?.name || '';
     let total = 0, days = 0, visitCount = 0;
     let skippedAnyDay = false;
     dates.forEach(d => {
-      if (!!(db.snowSkips || {})[snowSkipKey(d, p.id, crewId)]) { skippedAnyDay = true; return; }
-      const visits = db.snowLogs[snowLogKey(d, p.id, crewId)]?.visits || [];
+      if (!!(db.snowSkips || {})[snowSkipKey(d, p.id, p.crewId)]) { skippedAnyDay = true; return; }
+      const visits = db.snowLogs[snowLogKey(d, p.id, p.crewId)]?.visits || [];
       if (visits.length) days++;
       visits.forEach(v => { total += snowVisitDurationMin(v, d); if (v.end) visitCount++; });
     });
-    sumRows.push([p.name, p.address, crew?.name || '', +(total/60).toFixed(2), days, visitCount, skippedAnyDay ? 'Some Days Skipped' : '']);
+    sumRows.push([p.name, p.address, crewName, +(total/60).toFixed(2), days, visitCount, skippedAnyDay ? 'Some Days Skipped' : '']);
   });
 
   const wb = XLSX.utils.book_new();
@@ -1849,12 +1856,12 @@ function emailSnowSummary() {
   const crew = db.crews.find(c => c.id === crewId);
   const dates = Array.from({ length: 6 }, (_, i) => addDays(weekMon, i));
 
-  const activePropsEM = [...db.snowProperties].filter(p => !p.deleted && p.crewId === crewId).sort((a, b) => a.order - b.order);
-  const deletedWithLogsEM = db.snowProperties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => (db.snowLogs[snowLogKey(d, p.id, crewId)]?.visits || []).length));
+  const activePropsEM = [...db.snowProperties].filter(p => !p.deleted && (!crewId || p.crewId === crewId)).sort((a, b) => a.order - b.order);
+  const deletedWithLogsEM = db.snowProperties.filter(p => p.deleted && (!crewId || p.crewId === crewId) && dates.some(d => (db.snowLogs[snowLogKey(d, p.id, p.crewId)]?.visits || []).length));
   const props = [...activePropsEM, ...deletedWithLogsEM];
 
   let body = `NE Landscapes — Snow Weekly Summary\n`;
-  body += `${crew?.name || ''} | Week of ${weekMon}\n`;
+  body += `${crewId ? (crew?.name || '') : 'All Crews'} | Week of ${weekMon}\n`;
   body += `${'='.repeat(48)}\n\n`;
 
   let grandTotal = 0;
@@ -1862,16 +1869,17 @@ function emailSnowSummary() {
   dates.forEach(d => {
     const dow = dayName(d);
     const dayProps = props.filter(p => {
-      const visits = db.snowLogs[snowLogKey(d, p.id, crewId)]?.visits || [];
-      const skipped = !!(db.snowSkips || {})[snowSkipKey(d, p.id, crewId)];
+      const visits = db.snowLogs[snowLogKey(d, p.id, p.crewId)]?.visits || [];
+      const skipped = !!(db.snowSkips || {})[snowSkipKey(d, p.id, p.crewId)];
       return skipped || visits.length;
     });
     if (!dayProps.length) return;
     body += `${dow} ${d}\n${'-'.repeat(32)}\n`;
     dayProps.forEach((p, i) => {
-      const skipped = !!(db.snowSkips || {})[snowSkipKey(d, p.id, crewId)];
-      const visits = db.snowLogs[snowLogKey(d, p.id, crewId)]?.visits || [];
-      body += `  ${i+1}. ${p.name}\n`;
+      const skipped = !!(db.snowSkips || {})[snowSkipKey(d, p.id, p.crewId)];
+      const visits = db.snowLogs[snowLogKey(d, p.id, p.crewId)]?.visits || [];
+      const crewTxt = !crewId ? `  (${db.crews.find(c => c.id === p.crewId)?.name || ''})` : '';
+      body += `  ${i+1}. ${p.name}${crewTxt}\n`;
       if (skipped) { body += `     Skipped\n`; return; }
       visits.forEach((v, vi) => {
         const dur = snowVisitDurationMin(v, d);
@@ -1925,13 +1933,13 @@ function populateOwnerDropdowns() {
 function populateEmpDropdowns() {
   const opts = db.crews.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   setOptionsKeepValue(document.getElementById('emp-crew-select'), opts);
-  setOptionsKeepValue(document.getElementById('sum-crew'), opts);
+  setOptionsKeepValue(document.getElementById('sum-crew'), '<option value="">All Crews</option>' + opts);
 }
 
 function populateSnowDropdowns() {
   const opts = db.crews.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   setOptionsKeepValue(document.getElementById('snow-crew-select'), opts);
-  setOptionsKeepValue(document.getElementById('snow-sum-crew'), opts);
+  setOptionsKeepValue(document.getElementById('snow-sum-crew'), '<option value="">All Crews</option>' + opts);
 }
 
 // ══════════════════════════════════════════
