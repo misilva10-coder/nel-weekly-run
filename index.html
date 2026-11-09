@@ -286,7 +286,7 @@
     <div class="tab active" onclick="ownerTab('props',this)">Properties</div>
     <div class="tab" onclick="ownerTab('snowprops',this)">Snow Properties</div>
     <div class="tab" onclick="ownerTab('crews',this)">Crews</div>
-    <div class="tab" onclick="ownerTab('summary',this)">Weekly Summary</div>
+    <div class="tab" onclick="ownerTab('summary',this)">Grass Summary</div>
     <div class="tab" onclick="ownerTab('snowsummary',this)">Snow Summary</div>
     <div class="tab" onclick="ownerTab('settings',this)">Settings</div>
   </div>
@@ -335,7 +335,7 @@
   <!-- SUMMARY TAB -->
   <div id="owner-summary" style="display:none;">
     <div class="card">
-      <h2>Weekly Summary</h2>
+      <h2>Weekly Grass Summary</h2>
       <div class="form-row" style="margin-bottom:14px;">
         <label style="align-self:center;font-size:.9rem;">Week of:</label>
         <input type="date" id="sum-week" onchange="renderSummary()">
@@ -351,7 +351,7 @@
   <!-- SNOW SUMMARY TAB -->
   <div id="owner-snowsummary" style="display:none;">
     <div class="card">
-      <h2>Snow Weekly Summary</h2>
+      <h2>Snow Summary</h2>
       <div class="form-row" style="margin-bottom:14px;">
         <label style="align-self:center;font-size:.9rem;">Week of:</label>
         <input type="date" id="snow-sum-week" onchange="renderSnowSummary()">
@@ -1569,7 +1569,7 @@ function buildWorkbook() {
   const deletedWithLogsWB = db.properties.filter(p => p.deleted && p.crewId === crewId && dates.some(d => db.logs[logKey(d, p.id, crewId)]?.start));
   const props = [...activePropsWB, ...deletedWithLogsWB];
 
-  const detailRows = [['Date','Day','Client / Property','Address','Crew','Status','Start Time','End Time','Duration (hrs)','Property Notes','Daily Note','Start Date','End Date','Off Schedule']];
+  const detailRows = [['Scheduled Date','Scheduled Day','Client / Property','Address','Crew','Status','Start Time','End Time','Duration (hrs)','Property Notes','Daily Note','Actual Start Date','Actual End Date','Off Schedule']];
   dates.forEach(d => {
     const dow = dayName(d);
     props.forEach(p => {
