@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <style>
   :root {
     --green: #2d6a2d;
@@ -28,9 +29,9 @@
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f0; color: #222; min-height: 100vh; }
 
   /* ── NAV ── */
-  nav { background: var(--green); color: #fff; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; height: 56px; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+  nav { background: var(--green); color: #fff; padding: 8px 16px; display: flex; align-items: center; justify-content: space-between; min-height: 56px; flex-wrap: wrap; gap: 8px; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
   nav .brand { font-size: 1.1rem; font-weight: 700; letter-spacing: .5px; }
-  nav .nav-links { display: flex; gap: 6px; }
+  nav .nav-links { display: flex; gap: 6px; flex-wrap: wrap; }
   nav button { background: rgba(255,255,255,.15); border: none; color: #fff; padding: 7px 14px; border-radius: 6px; font-size: .85rem; cursor: pointer; transition: background .2s; }
   nav button:hover, nav button.active { background: rgba(255,255,255,.30); }
 
@@ -45,11 +46,12 @@
 
   /* ── FORMS ── */
   .form-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-  input[type=text], input[type=date], select {
+  input[type=text], input[type=date], input[type=number], select, textarea {
     flex: 1; min-width: 140px; padding: 9px 12px; border: 1px solid var(--border);
-    border-radius: 6px; font-size: .95rem; outline: none;
+    border-radius: 6px; font-size: .95rem; outline: none; font-family: inherit;
   }
-  input:focus, select:focus { border-color: var(--green-light); }
+  input:focus, select:focus, textarea:focus { border-color: var(--green-light); }
+  textarea { resize: vertical; min-height: 60px; line-height: 1.4; }
 
   /* ── BUTTONS ── */
   .btn { padding: 9px 18px; border: none; border-radius: 6px; font-size: .9rem; cursor: pointer; font-weight: 600; transition: opacity .15s; }
@@ -140,6 +142,12 @@
   .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .75rem; font-weight: 600; }
   .badge-green { background: var(--green-pale); color: var(--green); }
   .badge-orange { background: #fff0e0; color: var(--orange); }
+  .badge-gray { background: #eee; color: #777; }
+
+  /* ── WORK ORDERS ── */
+  #view-workorders { --green: #6a4ca3; --green-light: #8b6fc4; --green-pale: #eee6fa; }
+  .wo-worker-row { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+  .wo-worker-row.active { border-color: var(--orange); background: #fff8f2; }
 
   /* ── SNOW THEME (re-tints green-based components to blue within snow sections) ── */
   #view-snow, #owner-snowprops, #owner-snowsummary, #snow-prop-modal {
@@ -147,6 +155,10 @@
     --green-light: var(--blue-light);
     --green-pale: var(--blue-pale);
   }
+
+  /* ── NAV THEMING (top nav bar matches the active section's theme color) ── */
+  body[data-view="snow"] nav { background: var(--blue); }
+  body[data-view="workorders"] nav { background: #6a4ca3; }
 
   @media (max-width: 820px) {
     #owner-summary .form-row, #owner-snowsummary .form-row { flex-direction: column; align-items: stretch; }
@@ -166,7 +178,7 @@
 
 <!-- PIN OVERLAY (owner) -->
 <div id="pin-overlay" style="display:none;">
-  <h1>🌿 NE Landscapes</h1>
+  <h1>🌿 <span id="pin-brand-name">NE Landscapes</span></h1>
   <p>Enter Owner PIN to continue</p>
   <input type="password" id="pin-input" maxlength="6" placeholder="••••" inputmode="numeric">
   <div id="pin-error"></div>
@@ -237,15 +249,91 @@
   </div>
 </div>
 
+<!-- EMPLOYEE MODAL -->
+<div class="modal-bg" id="employee-modal">
+  <div class="modal">
+    <h3 id="employee-modal-title">Add Employee</h3>
+    <div class="form-row"><input type="text" id="em-name" placeholder="Employee name"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeEmployeeModal()">Cancel</button>
+      <button class="btn btn-green" onclick="saveEmployee()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- WORK ORDER MODAL -->
+<div class="modal-bg" id="wo-modal">
+  <div class="modal" style="width:min(480px, 94vw);">
+    <h3 id="wo-modal-title">New Work Order</h3>
+    <div style="margin-bottom:6px;font-size:.88rem;color:var(--gray);">Property</div>
+    <div class="form-row"><select id="wom-property" onchange="onWOPropertyChange()"></select></div>
+    <div id="wom-custom-block" style="display:none;">
+      <div class="form-row"><input type="text" id="wom-custom-name" placeholder="Property / site name"></div>
+      <div class="form-row"><input type="text" id="wom-custom-addr" placeholder="Address"></div>
+    </div>
+    <div style="margin-bottom:6px;font-size:.88rem;color:var(--gray);">What is the work?</div>
+    <div class="form-row"><textarea id="wom-desc" rows="3" placeholder="e.g. Trim hedges, remove fallen tree, mulch install — drag the corner to expand for more detail"></textarea></div>
+    <div class="form-row"><input type="date" id="wom-date" style="max-width:170px;"></div>
+    <div style="margin:10px 0 6px;font-size:.88rem;color:var(--gray);">Materials used</div>
+    <div id="wom-materials" style="margin-bottom:6px;"></div>
+    <button type="button" class="btn btn-gray btn-sm" style="margin-bottom:10px;" onclick="addWOMaterialRow()">+ Add material</button>
+    <div class="form-row"><input type="text" id="wom-note" placeholder="Note (optional)"></div>
+    <p style="font-size:.78rem;color:var(--gray);margin-top:4px;">Who's working gets picked on the field when time is started, not here.</p>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeWOModal()">Cancel</button>
+      <button class="btn btn-green" onclick="saveWorkOrder()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- START WORK MODAL (field-side: pick who's working right now) -->
+<div class="modal-bg" id="wo-start-modal">
+  <div class="modal">
+    <h3>Start Work</h3>
+    <div style="margin-bottom:6px;font-size:.88rem;color:var(--gray);">Who's working now?</div>
+    <div class="form-row" style="gap:16px;margin-bottom:10px;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:.9rem;"><input type="radio" name="wsmode" value="named" onchange="onWOStartModeChange()" checked> Select employees</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:.9rem;"><input type="radio" name="wsmode" value="headcount" onchange="onWOStartModeChange()"> Just a headcount</label>
+    </div>
+    <div id="ws-named-block">
+      <div id="ws-employees" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px 10px;"></div>
+    </div>
+    <div id="ws-headcount-block" style="display:none;">
+      <div class="form-row"><input type="number" id="ws-headcount" min="1" placeholder="Number of employees on site"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeWOStartModal()">Cancel</button>
+      <button class="btn btn-green" onclick="confirmWOStart()">▶ Start</button>
+    </div>
+  </div>
+</div>
+
+<!-- MATERIAL MODAL -->
+<div class="modal-bg" id="material-modal">
+  <div class="modal">
+    <h3 id="material-modal-title">Add Material</h3>
+    <div class="form-row"><input type="text" id="mm-name" placeholder="Material name (e.g. Mulch, Loam, Fertilizer)"></div>
+    <div class="form-row">
+      <input type="number" id="mm-price" min="0" step="0.01" placeholder="Price per unit">
+      <input type="text" id="mm-unit" placeholder="Unit (e.g. yard, bag, each)">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeMaterialModal()">Cancel</button>
+      <button class="btn btn-green" onclick="saveMaterial()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- FIREBASE STATUS BANNER -->
 <div id="fb-status" style="display:none;background:#fff3cd;color:#856404;padding:8px 16px;font-size:.85rem;text-align:center;border-bottom:1px solid #ffc107;"></div>
 
 <!-- NAV -->
 <nav>
-  <div class="brand">🌿 NE Landscapes</div>
+  <div class="brand">🌿 <span id="brand-name">NE Landscapes</span></div>
   <div class="nav-links">
     <button onclick="showView('employee')" id="nav-employee">Grass</button>
     <button onclick="showView('snow')" id="nav-snow">❄ Snow</button>
+    <button onclick="showView('workorders')" id="nav-workorders">🔧 Work Orders</button>
     <button onclick="ownerNav()" id="nav-owner">Owner ▾</button>
   </div>
 </nav>
@@ -279,6 +367,23 @@
 </div>
 
 <!-- ══════════════════════════════════════════
+     WORK ORDERS VIEW
+════════════════════════════════════════════ -->
+<div class="view" id="view-workorders">
+  <div class="card">
+    <div class="form-row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;">
+      <div class="form-row" style="margin-bottom:0;">
+        <button class="btn btn-sm btn-green" id="wo-filter-open" onclick="setWOFilter('open')">Open</button>
+        <button class="btn btn-sm btn-gray" id="wo-filter-completed" onclick="setWOFilter('completed')">Completed</button>
+        <button class="btn btn-sm btn-gray" id="wo-filter-all" onclick="setWOFilter('all')">All</button>
+      </div>
+      <button class="btn btn-green" onclick="openWOModal()">+ New Work Order</button>
+    </div>
+  </div>
+  <div id="wo-list"></div>
+</div>
+
+<!-- ══════════════════════════════════════════
      OWNER VIEW
 ════════════════════════════════════════════ -->
 <div class="view" id="view-owner">
@@ -286,8 +391,12 @@
     <div class="tab active" onclick="ownerTab('props',this)">Grass Properties</div>
     <div class="tab" onclick="ownerTab('snowprops',this)">Snow Properties</div>
     <div class="tab" onclick="ownerTab('crews',this)">Crews</div>
+    <div class="tab" onclick="ownerTab('employees',this)">Employees</div>
+    <div class="tab" onclick="ownerTab('materials',this)">Materials</div>
+    <div class="tab" onclick="ownerTab('workorders',this)">Work Orders</div>
     <div class="tab" onclick="ownerTab('summary',this)">Grass Summary</div>
     <div class="tab" onclick="ownerTab('snowsummary',this)">Snow Summary</div>
+    <div class="tab" onclick="ownerTab('jobcosts',this)">Job Costs</div>
     <div class="tab" onclick="ownerTab('settings',this)">Settings</div>
   </div>
 
@@ -332,6 +441,52 @@
     </div>
   </div>
 
+  <!-- EMPLOYEES TAB -->
+  <div id="owner-employees" style="display:none;">
+    <div class="card">
+      <h2>Employees</h2>
+      <button class="btn btn-green" style="margin-bottom:14px;" onclick="openEmployeeModal()">+ Add Employee</button>
+      <div id="employee-list"></div>
+    </div>
+  </div>
+
+  <!-- MATERIALS TAB -->
+  <div id="owner-materials" style="display:none;">
+    <div class="card">
+      <h2>Materials</h2>
+      <button class="btn btn-green" style="margin-bottom:14px;" onclick="openMaterialModal()">+ Add Material</button>
+      <div id="material-list"></div>
+    </div>
+  </div>
+
+  <!-- WORK ORDERS TAB (owner management — controls what crews see) -->
+  <div id="owner-workorders" style="display:none;">
+    <div class="card">
+      <h2>Work Orders</h2>
+      <div style="font-size:.8rem;color:var(--gray);margin-bottom:4px;">Status</div>
+      <div class="form-row" style="margin-bottom:10px;">
+        <button class="btn btn-sm btn-gray" id="owner-wo-filter-open" onclick="setOwnerWOFilter('open')">Open</button>
+        <button class="btn btn-sm btn-gray" id="owner-wo-filter-completed" onclick="setOwnerWOFilter('completed')">Completed</button>
+        <button class="btn btn-sm btn-green" id="owner-wo-filter-all" onclick="setOwnerWOFilter('all')">All</button>
+      </div>
+      <div style="font-size:.8rem;color:var(--gray);margin-bottom:4px;">Visibility to crews</div>
+      <div class="form-row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;">
+        <div class="form-row" style="margin-bottom:0;">
+          <button class="btn btn-sm btn-gray" id="owner-wo-active-active" onclick="setOwnerWOActiveFilter('active')">Visible</button>
+          <button class="btn btn-sm btn-gray" id="owner-wo-active-inactive" onclick="setOwnerWOActiveFilter('inactive')">Hidden</button>
+          <button class="btn btn-sm btn-green" id="owner-wo-active-all" onclick="setOwnerWOActiveFilter('all')">All</button>
+        </div>
+        <button class="btn btn-green" onclick="openWOModal()">+ New Work Order</button>
+      </div>
+      <div style="font-size:.8rem;color:var(--gray);margin-bottom:4px;margin-top:10px;">Search</div>
+      <div class="form-row" style="margin-bottom:0;">
+        <input type="text" id="owner-wo-search" placeholder="Search by property name or address…" oninput="setOwnerWOSearch(this.value)" style="flex:1;">
+        <button class="btn btn-sm btn-gray" id="owner-wo-search-clear" onclick="clearOwnerWOSearch()" style="display:none;">✕ Clear</button>
+      </div>
+    </div>
+    <div id="owner-wo-list"></div>
+  </div>
+
   <!-- SUMMARY TAB -->
   <div id="owner-summary" style="display:none;">
     <div class="card">
@@ -364,10 +519,39 @@
     <div id="snow-summary-content"></div>
   </div>
 
+  <!-- JOB COSTS TAB (owner-only financial view) -->
+  <div id="owner-jobcosts" style="display:none;">
+    <div class="card">
+      <h2>Work Order Job Costs</h2>
+      <p style="font-size:.82rem;color:var(--gray);margin-bottom:12px;">Labor rate: <strong id="jobcosts-rate-display">$0.00/hr</strong> &nbsp;·&nbsp; Material markup: <strong id="jobcosts-markup-display">0%</strong> — edit in Settings.</p>
+      <div style="font-size:.8rem;color:var(--gray);margin-bottom:4px;">Status</div>
+      <div class="form-row" style="margin-bottom:10px;">
+        <button class="btn btn-sm btn-green" id="jobcosts-filter-open" onclick="setJobCostFilter('open')">Open</button>
+        <button class="btn btn-sm btn-gray" id="jobcosts-filter-completed" onclick="setJobCostFilter('completed')">Completed</button>
+        <button class="btn btn-sm btn-gray" id="jobcosts-filter-all" onclick="setJobCostFilter('all')">All</button>
+      </div>
+      <div style="font-size:.8rem;color:var(--gray);margin-bottom:4px;">Invoiced</div>
+      <div class="form-row">
+        <button class="btn btn-sm btn-green" id="jobcosts-inv-all" onclick="setJobCostInvoicedFilter('all')">All</button>
+        <button class="btn btn-sm btn-gray" id="jobcosts-inv-yes" onclick="setJobCostInvoicedFilter('invoiced')">Invoiced</button>
+        <button class="btn btn-sm btn-gray" id="jobcosts-inv-no" onclick="setJobCostInvoicedFilter('notinvoiced')">Not Invoiced</button>
+      </div>
+    </div>
+    <div id="jobcosts-content"></div>
+  </div>
+
   <!-- SETTINGS TAB -->
   <div id="owner-settings" style="display:none;">
     <div class="card">
       <h2>Settings</h2>
+      <div style="margin-bottom:14px;">
+        <label style="font-size:.9rem;display:block;margin-bottom:6px;">Company Name</label>
+        <div class="form-row">
+          <input type="text" id="company-name-input" placeholder="e.g. NE Landscapes" style="max-width:260px;" onchange="saveCompanyName()">
+        </div>
+        <p style="font-size:.78rem;color:var(--gray);margin-top:4px;">Shown as the app title and on the owner PIN screen. Change this to brand the app for a different company.</p>
+      </div>
+      <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
       <div style="margin-bottom:14px;">
         <label style="font-size:.9rem;display:block;margin-bottom:6px;">Default tab on open</label>
         <div class="form-row">
@@ -377,6 +561,20 @@
           </select>
         </div>
         <p style="font-size:.78rem;color:var(--gray);margin-top:4px;">Which tab loads first when the app is opened — e.g. Grass in summer, Snow in winter.</p>
+      </div>
+      <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
+      <div style="margin-bottom:14px;">
+        <div class="form-row">
+          <div style="flex:1;min-width:140px;">
+            <label style="font-size:.9rem;display:block;margin-bottom:6px;">Labor Rate ($ per hour)</label>
+            <input type="number" id="labor-rate-input" min="0" step="0.01" style="max-width:150px;" onchange="saveLaborRate()">
+          </div>
+          <div style="flex:1;min-width:140px;">
+            <label style="font-size:.9rem;display:block;margin-bottom:6px;">Material Markup (%)</label>
+            <input type="number" id="material-markup-input" min="0" step="0.1" style="max-width:150px;" onchange="saveMaterialMarkup()">
+          </div>
+        </div>
+        <p style="font-size:.78rem;color:var(--gray);margin-top:4px;">Labor rate calculates labor cost on the Job Costs tab. Material markup is applied to each material's wholesale cost (Materials tab) to get the charge billed on work orders. Neither is shown on the Grass, Snow, or Work Orders pages.</p>
       </div>
       <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
       <div style="margin-bottom:14px;">
@@ -417,6 +615,7 @@ const DB_KEY = 'nel_landscape_v1';
 function defaultDB() {
   return {
     pin: '1234',
+    companyName: '',
     defaultTab: 'employee',
     crews: [{ id: 'crew1', name: 'Crew A', color: '#2d6a2d' }],
     properties: [],
@@ -424,7 +623,12 @@ function defaultDB() {
     skips: {},
     snowProperties: [],
     snowLogs: {},
-    snowSkips: {}
+    snowSkips: {},
+    employees: [],
+    workOrders: [],
+    materials: [],
+    laborRate: 0,
+    materialMarkup: 0
   };
 }
 
@@ -443,6 +647,28 @@ function migrateSnowLogs(snowLogs) {
   return snowLogs;
 }
 
+// Work orders moved from a single named/headcount selection made when the
+// order was created (with either one start/stop per employee, or one shared
+// crew start/stop) to a list of "sessions" — who's working gets picked each
+// time someone starts the clock, so staffing can change visit to visit. This
+// upgrades any old-shape work order into { sessions: [...] } in place.
+function migrateWorkOrders(workOrders) {
+  (workOrders || []).forEach(wo => {
+    if (!wo || wo.sessions) return;
+    wo.sessions = [];
+    if (wo.trackMode === 'named' && wo.entries) {
+      Object.entries(wo.entries).forEach(([empId, e]) => {
+        if (e && e.start) wo.sessions.push({ trackMode: 'named', employeeIds: [empId], start: e.start, startDate: e.startDate, end: e.end || null, endDate: e.endDate || null });
+      });
+    } else if (wo.trackMode === 'headcount' && wo.crewEntry && wo.crewEntry.start) {
+      const c = wo.crewEntry;
+      wo.sessions.push({ trackMode: 'headcount', headcount: wo.headcount || 1, start: c.start, startDate: c.startDate, end: c.end || null, endDate: c.endDate || null });
+    }
+    delete wo.trackMode; delete wo.employeeIds; delete wo.entries; delete wo.headcount; delete wo.crewEntry;
+  });
+  return workOrders;
+}
+
 function loadLocalCache() {
   try {
     const saved = JSON.parse(localStorage.getItem(DB_KEY));
@@ -453,7 +679,14 @@ function loadLocalCache() {
     if (!saved.snowLogs)  saved.snowLogs  = {};
     if (!saved.snowSkips) saved.snowSkips = {};
     if (!saved.defaultTab) saved.defaultTab = 'employee';
+    if (saved.companyName == null) saved.companyName = '';
+    if (!saved.employees) saved.employees = [];
+    if (!saved.workOrders) saved.workOrders = [];
+    if (!saved.materials) saved.materials = [];
+    if (saved.laborRate == null) saved.laborRate = 0;
+    if (saved.materialMarkup == null) saved.materialMarkup = 0;
     migrateSnowLogs(saved.snowLogs);
+    migrateWorkOrders(saved.workOrders);
     return saved;
   } catch { return defaultDB(); }
 }
@@ -476,30 +709,48 @@ function initFirebase() {
     const database = firebase.database(app);
     fbRef = database.ref(DB_PATH);
 
-    // Push local data to Firebase on first connect if Firebase is empty
-    fbRef.once('value', snapshot => {
-      if (!snapshot.exists()) {
-        fbRef.set(db);
-      }
-    });
+    // Sign in anonymously first — the database rules require auth != null,
+    // so nothing attaches until Firebase has issued this device a token.
+    // This blocks random internet traffic from hitting the open REST
+    // endpoint directly; it does not add per-user permissions (every
+    // visitor who loads this page gets a token the same way).
+    firebase.auth().signInAnonymously().then(() => {
+      // Push local data to Firebase on first connect if Firebase is empty
+      fbRef.once('value', snapshot => {
+        if (!snapshot.exists()) {
+          fbRef.set(db);
+        }
+      });
 
-    // Real-time listener — fires immediately and on every remote change
-    fbRef.on('value', snapshot => {
-      const remote = snapshot.val();
-      if (!remote) return;
-      if (!remote.logs)  remote.logs  = {};
-      if (!remote.skips) remote.skips = {};
-      if (!remote.snowProperties) remote.snowProperties = [];
-      if (!remote.snowLogs)  remote.snowLogs  = {};
-      if (!remote.snowSkips) remote.snowSkips = {};
-      if (!remote.defaultTab) remote.defaultTab = 'employee';
-      migrateSnowLogs(remote.snowLogs);
-      db = remote;
-      saveLocalCache();
-      rerenderAll();
-    });
+      // Real-time listener — fires immediately and on every remote change
+      fbRef.on('value', snapshot => {
+        const remote = snapshot.val();
+        if (!remote) return;
+        if (!remote.logs)  remote.logs  = {};
+        if (!remote.skips) remote.skips = {};
+        if (!remote.snowProperties) remote.snowProperties = [];
+        if (!remote.snowLogs)  remote.snowLogs  = {};
+        if (!remote.snowSkips) remote.snowSkips = {};
+        if (!remote.defaultTab) remote.defaultTab = 'employee';
+        if (remote.companyName == null) remote.companyName = '';
+        if (!remote.employees) remote.employees = [];
+        if (!remote.workOrders) remote.workOrders = [];
+        if (!remote.materials) remote.materials = [];
+        if (remote.laborRate == null) remote.laborRate = 0;
+        if (remote.materialMarkup == null) remote.materialMarkup = 0;
+        migrateSnowLogs(remote.snowLogs);
+        migrateWorkOrders(remote.workOrders);
+        db = remote;
+        saveLocalCache();
+        applyBranding();
+        rerenderAll();
+      });
 
-    document.getElementById('fb-status').style.display = 'none';
+      document.getElementById('fb-status').style.display = 'none';
+    }).catch(e => {
+      document.getElementById('fb-status').textContent = '⚠ Firebase sign-in failed — running in local-only mode: ' + e.message;
+      document.getElementById('fb-status').style.display = 'block';
+    });
   } catch (e) {
     document.getElementById('fb-status').textContent = '⚠ Firebase error: ' + e.message;
     document.getElementById('fb-status').style.display = 'block';
@@ -520,13 +771,15 @@ let db = loadLocalCache();
 //  NAVIGATION
 // ══════════════════════════════════════════
 function showView(name) {
+  document.body.setAttribute('data-view', name);
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
   document.getElementById('nav-' + name).classList.add('active');
   if (name === 'employee') renderJobList();
   if (name === 'snow') renderSnowJobList();
-  if (name === 'owner') { renderPropList(); renderCrewList(); renderSnowPropList(); populateOwnerDropdowns(); }
+  if (name === 'workorders') renderWorkOrderList();
+  if (name === 'owner') { renderPropList(); renderCrewList(); renderSnowPropList(); renderEmployeeList(); renderMaterialList(); renderOwnerWorkOrderList(); populateOwnerDropdowns(); }
 }
 
 function ownerNav() {
@@ -556,12 +809,16 @@ function closePinOverlay() {
 }
 
 function ownerTab(tab, el) {
-  ['props','snowprops','crews','summary','snowsummary','settings'].forEach(t => document.getElementById('owner-' + t).style.display = 'none');
+  ['props','snowprops','crews','employees','materials','workorders','summary','snowsummary','jobcosts','settings'].forEach(t => document.getElementById('owner-' + t).style.display = 'none');
   document.getElementById('owner-' + tab).style.display = 'block';
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
+  if (tab === 'employees') renderEmployeeList();
+  if (tab === 'materials') renderMaterialList();
+  if (tab === 'workorders') renderOwnerWorkOrderList();
   if (tab === 'summary') renderSummary();
   if (tab === 'snowsummary') renderSnowSummary();
+  if (tab === 'jobcosts') renderJobCosts();
   if (tab === 'settings') renderSettings();
 }
 
@@ -1902,6 +2159,878 @@ function emailSnowSummary() {
 }
 
 // ══════════════════════════════════════════
+//  EMPLOYEES
+// ══════════════════════════════════════════
+let editingEmployeeId = null;
+
+function openEmployeeModal(id) {
+  editingEmployeeId = id || null;
+  const modal = document.getElementById('employee-modal');
+  if (id) {
+    const e = db.employees.find(x => x.id === id);
+    document.getElementById('employee-modal-title').textContent = 'Edit Employee';
+    document.getElementById('em-name').value = e.name;
+  } else {
+    document.getElementById('employee-modal-title').textContent = 'Add Employee';
+    document.getElementById('em-name').value = '';
+  }
+  modal.classList.add('open');
+}
+
+function closeEmployeeModal() { document.getElementById('employee-modal').classList.remove('open'); }
+
+function saveEmployee() {
+  const name = document.getElementById('em-name').value.trim();
+  if (!name) return alert('Enter an employee name.');
+  if (editingEmployeeId) {
+    const e = db.employees.find(x => x.id === editingEmployeeId);
+    e.name = name;
+  } else {
+    db.employees.push({ id: 'emp' + Date.now(), name, deleted: false });
+  }
+  saveDB(); closeEmployeeModal(); renderEmployeeList();
+}
+
+function deleteEmployee(id) {
+  if (!confirm('Remove this employee? Past work order records are kept.')) return;
+  const e = db.employees.find(x => x.id === id);
+  if (e) e.deleted = true;
+  saveDB(); renderEmployeeList();
+}
+
+function restoreEmployee(id) {
+  const e = db.employees.find(x => x.id === id);
+  if (e) { delete e.deleted; saveDB(); renderEmployeeList(); }
+}
+
+function renderEmployeeList() {
+  const el = document.getElementById('employee-list');
+  if (!el) return;
+  if (!db.employees.length) { el.innerHTML = '<p style="color:var(--gray);font-size:.9rem;">No employees yet. Add one above.</p>'; return; }
+  const active = db.employees.filter(e => !e.deleted);
+  const removed = db.employees.filter(e => e.deleted);
+  el.innerHTML = active.map(e => `
+    <div class="crew-item">
+      <div style="flex:1;font-weight:600;">${esc(e.name)}</div>
+      <button class="btn btn-gray btn-sm" onclick="openEmployeeModal('${e.id}')">Edit</button>
+      <button class="btn btn-red btn-sm" onclick="deleteEmployee('${e.id}')">Delete</button>
+    </div>`).join('')
+    + (removed.length ? `<p style="font-size:.8rem;color:var(--gray);margin:10px 0 6px;">Removed:</p>` + removed.map(e => `
+    <div class="crew-item" style="opacity:.6;">
+      <div style="flex:1;">${esc(e.name)}</div>
+      <button class="btn btn-green btn-sm" onclick="restoreEmployee('${e.id}')">↺ Restore</button>
+    </div>`).join('') : '');
+}
+
+// ══════════════════════════════════════════
+//  WORK ORDERS
+//  One-off jobs outside the weekly grass/snow schedule. A work order is
+//  pinned to a property (picked from the grass/snow lists, or typed in for
+//  a site that isn't otherwise serviced) and tracks time either per named
+//  employee (each gets their own Start/Stop) or, when names aren't known
+//  yet, as a single shared Start/Stop against a headcount.
+// ══════════════════════════════════════════
+let editingWOId = null;
+let woFilter = 'open';
+// Which work orders have their time/materials/note/actions EXPANDED on the
+// Owner's Work Orders management tab — hidden by default (field-facing
+// cards are never collapsed).
+let ownerWOExpanded = new Set();
+
+function toggleOwnerWOCollapse(id) {
+  if (ownerWOExpanded.has(id)) ownerWOExpanded.delete(id);
+  else ownerWOExpanded.add(id);
+  renderOwnerWorkOrderList();
+}
+
+function propertySelectOptionsHTML() {
+  const grassOpts = [...db.properties].filter(p => !p.deleted).sort((a, b) => a.order - b.order)
+    .map(p => `<option value="grass:${p.id}">${esc(p.name)}</option>`).join('');
+  const snowOpts = [...db.snowProperties].filter(p => !p.deleted).sort((a, b) => a.order - b.order)
+    .map(p => `<option value="snow:${p.id}">${esc(p.name)}</option>`).join('');
+  return `<option value="">Select a property…</option>`
+    + (grassOpts ? `<optgroup label="Grass Properties">${grassOpts}</optgroup>` : '')
+    + (snowOpts ? `<optgroup label="Snow Properties">${snowOpts}</optgroup>` : '')
+    + `<optgroup label="Other"><option value="custom">Other / type manually…</option></optgroup>`;
+}
+
+function resolvePropertyRef(val) {
+  if (!val || val === 'custom') return null;
+  const [src, id] = val.split(':');
+  const list = src === 'grass' ? db.properties : db.snowProperties;
+  return (list || []).find(p => p.id === id) || null;
+}
+
+function onWOPropertyChange() {
+  const val = document.getElementById('wom-property').value;
+  document.getElementById('wom-custom-block').style.display = val === 'custom' ? 'block' : 'none';
+}
+
+// ── START WORK (field-side) ──
+// Who's working isn't picked when the work order is created — it's picked
+// each time someone starts the clock, so a work order can be staffed
+// differently session to session.
+let woStartTargetId = null;
+
+function onWOStartModeChange() {
+  const mode = document.querySelector('input[name=wsmode]:checked').value;
+  document.getElementById('ws-named-block').style.display = mode === 'named' ? 'block' : 'none';
+  document.getElementById('ws-headcount-block').style.display = mode === 'headcount' ? 'block' : 'none';
+}
+
+function renderWSEmployeeCheckboxes() {
+  const el = document.getElementById('ws-employees');
+  const active = db.employees.filter(e => !e.deleted);
+  if (!active.length) {
+    el.innerHTML = '<p style="font-size:.85rem;color:var(--gray);">No employees yet — add them in Owner → Employees.</p>';
+    return;
+  }
+  el.innerHTML = active.map(e => `<label style="display:flex;align-items:center;gap:6px;font-size:.9rem;padding:4px 0;">
+    <input type="checkbox" name="wsemp" value="${e.id}"> ${esc(e.name)}
+  </label>`).join('');
+}
+
+function openWOStartModal(woId) {
+  woStartTargetId = woId;
+  document.querySelector('input[name=wsmode][value="named"]').checked = true;
+  renderWSEmployeeCheckboxes();
+  document.getElementById('ws-headcount').value = '';
+  onWOStartModeChange();
+  document.getElementById('wo-start-modal').classList.add('open');
+}
+
+function closeWOStartModal() {
+  document.getElementById('wo-start-modal').classList.remove('open');
+  woStartTargetId = null;
+}
+
+function confirmWOStart() {
+  const wo = db.workOrders.find(x => x.id === woStartTargetId);
+  if (!wo) return;
+  const mode = document.querySelector('input[name=wsmode]:checked').value;
+  const n = nowStamp();
+  let session;
+  if (mode === 'named') {
+    const employeeIds = [...document.querySelectorAll('input[name=wsemp]:checked')].map(cb => cb.value);
+    if (!employeeIds.length) return alert('Select at least one employee, or switch to headcount.');
+    session = { trackMode: 'named', employeeIds, start: n.time, startDate: n.date, end: null, endDate: null };
+  } else {
+    const headcount = parseInt(document.getElementById('ws-headcount').value, 10);
+    if (!headcount || headcount < 1) return alert('Enter the number of employees on site.');
+    session = { trackMode: 'headcount', headcount, start: n.time, startDate: n.date, end: null, endDate: null };
+  }
+  if (!wo.sessions) wo.sessions = [];
+  wo.sessions.push(session);
+  saveDB(); closeWOStartModal(); renderAllWOViews();
+}
+
+function woSessionStop(woId, idx) {
+  const wo = db.workOrders.find(x => x.id === woId);
+  if (!wo || !wo.sessions || !wo.sessions[idx]) return;
+  const n = nowStamp();
+  wo.sessions[idx].end = n.time;
+  wo.sessions[idx].endDate = n.date;
+  saveDB(); renderAllWOViews();
+}
+
+function woSessionRemove(woId, idx) {
+  if (!confirm('Remove this time entry?')) return;
+  const wo = db.workOrders.find(x => x.id === woId);
+  if (!wo || !wo.sessions) return;
+  wo.sessions.splice(idx, 1);
+  saveDB(); renderAllWOViews();
+}
+
+// Materials used on the work order being edited — name + quantity only.
+// No price is ever shown here; this modal is reachable from the field-facing
+// Work Orders page, so cost figures stay confined to the Owner > Job Costs tab.
+let womMaterials = [];
+
+function materialOptionsHTML(selectedId) {
+  const active = db.materials.filter(m => !m.deleted);
+  return `<option value="">Select material…</option>` + active.map(m =>
+    `<option value="${m.id}" ${m.id === selectedId ? 'selected' : ''}>${esc(m.name)}${m.unit ? ' (' + esc(m.unit) + ')' : ''}</option>`
+  ).join('');
+}
+
+function renderWOMaterialRows() {
+  const el = document.getElementById('wom-materials');
+  if (!womMaterials.length) {
+    el.innerHTML = '<p style="font-size:.85rem;color:var(--gray);">No materials added.</p>';
+    return;
+  }
+  el.innerHTML = womMaterials.map((row, i) => `
+    <div class="form-row" style="margin-bottom:6px;">
+      <select style="flex:2;" onchange="updateWOMaterialRow(${i},'materialId',this.value)">${materialOptionsHTML(row.materialId)}</select>
+      <input type="number" min="0" step="any" placeholder="Qty" value="${row.qty || ''}" style="flex:1;min-width:80px;" oninput="updateWOMaterialRow(${i},'qty',this.value)">
+      <button type="button" class="btn btn-red btn-sm" onclick="removeWOMaterialRow(${i})">✕</button>
+    </div>`).join('');
+}
+
+function addWOMaterialRow() {
+  womMaterials.push({ materialId: '', qty: '' });
+  renderWOMaterialRows();
+}
+function updateWOMaterialRow(i, field, value) {
+  if (!womMaterials[i]) return;
+  womMaterials[i][field] = value;
+}
+function removeWOMaterialRow(i) {
+  womMaterials.splice(i, 1);
+  renderWOMaterialRows();
+}
+
+function openWOModal(id) {
+  editingWOId = id || null;
+  document.getElementById('wom-property').innerHTML = propertySelectOptionsHTML();
+
+  if (id) {
+    const wo = db.workOrders.find(x => x.id === id);
+    document.getElementById('wo-modal-title').textContent = 'Edit Work Order';
+    document.getElementById('wom-property').value = 'custom';
+    document.getElementById('wom-custom-block').style.display = 'block';
+    document.getElementById('wom-custom-name').value = wo.propertyName;
+    document.getElementById('wom-custom-addr').value = wo.propertyAddress || '';
+    document.getElementById('wom-desc').value = wo.description;
+    document.getElementById('wom-date').value = wo.date;
+    document.getElementById('wom-note').value = wo.note || '';
+    womMaterials = (wo.materials || []).map(m => ({ ...m }));
+  } else {
+    document.getElementById('wo-modal-title').textContent = 'New Work Order';
+    document.getElementById('wom-property').value = '';
+    document.getElementById('wom-custom-block').style.display = 'none';
+    document.getElementById('wom-custom-name').value = '';
+    document.getElementById('wom-custom-addr').value = '';
+    document.getElementById('wom-desc').value = '';
+    document.getElementById('wom-date').value = todayStr();
+    document.getElementById('wom-note').value = '';
+    womMaterials = [];
+  }
+  renderWOMaterialRows();
+  document.getElementById('wo-modal').classList.add('open');
+}
+
+function closeWOModal() { document.getElementById('wo-modal').classList.remove('open'); }
+
+function saveWorkOrder() {
+  const propVal = document.getElementById('wom-property').value;
+  const description = document.getElementById('wom-desc').value.trim();
+  const date = document.getElementById('wom-date').value || todayStr();
+  const note = document.getElementById('wom-note').value.trim();
+
+  let propertyName, propertyAddress;
+  if (propVal === 'custom') {
+    propertyName = document.getElementById('wom-custom-name').value.trim();
+    propertyAddress = document.getElementById('wom-custom-addr').value.trim();
+    if (!propertyName) return alert('Enter a property / site name.');
+  } else {
+    const ref = resolvePropertyRef(propVal);
+    if (!ref) return alert('Select a property.');
+    propertyName = ref.name;
+    propertyAddress = ref.address;
+  }
+  if (!description) return alert('Enter what the work is.');
+
+  const materials = womMaterials
+    .filter(r => r.materialId && parseFloat(r.qty) > 0)
+    .map(r => ({ materialId: r.materialId, qty: parseFloat(r.qty) }));
+
+  if (editingWOId) {
+    const wo = db.workOrders.find(x => x.id === editingWOId);
+    Object.assign(wo, { propertyName, propertyAddress, description, date, note, materials });
+  } else {
+    db.workOrders.push({
+      id: 'wo' + Date.now(),
+      propertyName, propertyAddress, description, date, note, materials,
+      sessions: [],
+      status: 'open', active: true, createdAt: Date.now()
+    });
+  }
+  saveDB(); closeWOModal(); renderAllWOViews();
+}
+
+function deleteWorkOrder(id) {
+  if (!confirm('Delete this work order? This cannot be undone.')) return;
+  db.workOrders = db.workOrders.filter(w => w.id !== id);
+  saveDB(); renderAllWOViews();
+}
+
+function toggleWOStatus(id) {
+  const wo = db.workOrders.find(x => x.id === id);
+  if (!wo) return;
+  wo.status = wo.status === 'completed' ? 'open' : 'completed';
+  saveDB(); renderAllWOViews();
+}
+
+// Owner-only visibility switch: an inactive work order is simply left out of
+// the field-facing Work Orders page, so the owner can stage several ahead of
+// time and release each to the crews when ready.
+function toggleWOActive(id) {
+  const wo = db.workOrders.find(x => x.id === id);
+  if (!wo) return;
+  wo.active = wo.active === false ? true : false;
+  saveDB(); renderAllWOViews();
+}
+
+function saveWONote(id, value) {
+  const wo = db.workOrders.find(x => x.id === id);
+  if (!wo) return;
+  wo.note = value.trim();
+  saveDB();
+}
+
+function setWOFilter(filter) {
+  woFilter = filter;
+  ['open', 'completed', 'all'].forEach(f => {
+    const btn = document.getElementById('wo-filter-' + f);
+    if (btn) btn.className = 'btn btn-sm ' + (f === filter ? 'btn-green' : 'btn-gray');
+  });
+  renderWorkOrderList();
+}
+
+let ownerWOFilter = 'all';
+let ownerWOActiveFilter = 'all';
+let ownerWOSearch = '';
+
+function setOwnerWOSearch(value) {
+  ownerWOSearch = value;
+  const clearBtn = document.getElementById('owner-wo-search-clear');
+  if (clearBtn) clearBtn.style.display = value ? 'inline-block' : 'none';
+  renderOwnerWorkOrderList();
+}
+
+function clearOwnerWOSearch() {
+  ownerWOSearch = '';
+  const input = document.getElementById('owner-wo-search');
+  if (input) input.value = '';
+  const clearBtn = document.getElementById('owner-wo-search-clear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  renderOwnerWorkOrderList();
+}
+
+function setOwnerWOFilter(filter) {
+  ownerWOFilter = filter;
+  ['open', 'completed', 'all'].forEach(f => {
+    const btn = document.getElementById('owner-wo-filter-' + f);
+    if (btn) btn.className = 'btn btn-sm ' + (f === filter ? 'btn-green' : 'btn-gray');
+  });
+  renderOwnerWorkOrderList();
+}
+
+function setOwnerWOActiveFilter(filter) {
+  ownerWOActiveFilter = filter;
+  ['active', 'inactive', 'all'].forEach(f => {
+    const btn = document.getElementById('owner-wo-active-' + f);
+    if (btn) btn.className = 'btn btn-sm ' + (f === filter ? 'btn-green' : 'btn-gray');
+  });
+  renderOwnerWorkOrderList();
+}
+
+function renderAllWOViews() {
+  renderWorkOrderList();
+  renderOwnerWorkOrderList();
+}
+
+function woStatusLabel(wo) {
+  if (wo.status === 'completed') return '<span class="badge badge-green">Completed</span>';
+  const sessions = wo.sessions || [];
+  if (!sessions.length) return '<span class="badge badge-gray">Not Started</span>';
+  if (sessions.some(s => s.start && !s.end)) return '<span class="badge badge-orange">In Progress</span>';
+  return '<span class="badge badge-orange">Open</span>';
+}
+
+function woSessionLabel(session) {
+  if (session.trackMode === 'named') {
+    const names = (session.employeeIds || []).map(id => db.employees.find(e => e.id === id)?.name).filter(Boolean);
+    return names.length ? esc(names.join(', ')) : 'Employees';
+  }
+  return `👥 ${session.headcount} employee${session.headcount === 1 ? '' : 's'}`;
+}
+
+function woSessionRowHTML(wo, session, idx) {
+  const hasEnd = !!session.end;
+  const timesHtml = `<span class="filled">▶ ${fullStamp(session.startDate, session.start)}</span>`
+    + (hasEnd
+      ? `<span class="filled">■ ${fullStamp(session.endDate, session.end)}</span><span class="filled">⏱ ${visitDurStr(session, wo.date)}</span>`
+      : `<span style="color:var(--orange);font-style:italic;">In progress</span>`);
+  const actions = hasEnd
+    ? `<button class="btn btn-gray btn-sm" onclick="woSessionRemove('${wo.id}',${idx})">✕ Remove</button>`
+    : `<button class="btn btn-orange btn-sm" onclick="woSessionStop('${wo.id}',${idx})">■ Stop</button>`;
+  return `<div class="wo-worker-row${hasEnd ? '' : ' active'}">
+    <div class="job-times" style="margin-bottom:6px;"><strong style="margin-right:auto;">${woSessionLabel(session)}</strong>${timesHtml}</div>
+    <div class="job-actions">${actions}</div>
+  </div>`;
+}
+
+// ── Owner-editable time-entry row ──
+// The owner can correct who worked a session and the exact dates/times,
+// not just start/stop the clock the way the field view does.
+function time12to24(t) { // "8:15 AM" -> "08:15" (for a <input type=time> value)
+  if (!t) return '';
+  const [time, ampm] = String(t).trim().split(/\s+/);
+  let [h, m] = (time || '').split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return '';
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function time24to12(t) { // "08:15" -> "8:15 AM" (back to the stored format)
+  if (!t) return '';
+  let [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function employeeCheckboxesInline(selectedIds, woId, idx) {
+  const active = db.employees.filter(e => !e.deleted);
+  if (!active.length) return '<span style="color:var(--gray);font-size:.85rem;">No employees yet — add them in Owner → Employees.</span>';
+  return active.map(e => `<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;font-size:.85rem;">
+    <input type="checkbox" ${selectedIds.includes(e.id) ? 'checked' : ''} onchange="toggleSessionEmployee('${woId}',${idx},'${e.id}',this.checked)"> ${esc(e.name)}
+  </label>`).join('');
+}
+
+function toggleSessionEmployee(woId, idx, empId, checked) {
+  const wo = db.workOrders.find(x => x.id === woId);
+  const s = wo && wo.sessions && wo.sessions[idx];
+  if (!s) return;
+  if (!s.employeeIds) s.employeeIds = [];
+  if (checked) { if (!s.employeeIds.includes(empId)) s.employeeIds.push(empId); }
+  else { s.employeeIds = s.employeeIds.filter(id => id !== empId); }
+  saveDB(); renderAllWOViews();
+}
+
+function updateSessionHeadcount(woId, idx, value) {
+  const wo = db.workOrders.find(x => x.id === woId);
+  const s = wo && wo.sessions && wo.sessions[idx];
+  if (!s) return;
+  const n = parseInt(value, 10);
+  s.headcount = n > 0 ? n : s.headcount;
+  saveDB(); renderAllWOViews();
+}
+
+function updateSessionDateTime(woId, idx, field, value) {
+  const wo = db.workOrders.find(x => x.id === woId);
+  const s = wo && wo.sessions && wo.sessions[idx];
+  if (!s) return;
+  if (field === 'startTime') s.start = value ? time24to12(value) : null;
+  else if (field === 'endTime') s.end = value ? time24to12(value) : null;
+  else s[field] = value || null; // startDate / endDate
+  saveDB(); renderAllWOViews();
+}
+
+function addEmptySession(woId) {
+  const wo = db.workOrders.find(x => x.id === woId);
+  if (!wo) return;
+  if (!wo.sessions) wo.sessions = [];
+  const n = nowStamp();
+  wo.sessions.push({ trackMode: 'named', employeeIds: [], start: n.time, startDate: n.date, end: null, endDate: null });
+  saveDB(); renderAllWOViews();
+}
+
+function woSessionRowEditHTML(wo, session, idx) {
+  const isNamed = session.trackMode !== 'headcount';
+  const empControl = isNamed
+    ? `<div style="margin:2px 0 6px;">${employeeCheckboxesInline(session.employeeIds || [], wo.id, idx)}</div>`
+    : `<div style="margin:2px 0 6px;display:flex;align-items:center;gap:6px;font-size:.85rem;">👥
+         <input type="number" min="1" value="${session.headcount || ''}" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;"
+           onchange="updateSessionHeadcount('${wo.id}',${idx},this.value)"> employee(s)</div>`;
+  const duration = session.end
+    ? `<span class="filled" style="padding:3px 10px;border-radius:20px;background:var(--green-pale);color:var(--green);font-weight:600;">⏱ ${visitDurStr(session, wo.date)}</span>`
+    : `<span style="color:var(--orange);font-style:italic;">In progress</span>`;
+
+  return `<div class="wo-worker-row${session.end ? '' : ' active'}">
+    ${empControl}
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:.85rem;">
+      <label style="display:flex;align-items:center;gap:4px;">▶
+        <input type="date" value="${session.startDate || ''}" style="padding:4px 6px;border:1px solid var(--border);border-radius:6px;" onchange="updateSessionDateTime('${wo.id}',${idx},'startDate',this.value)">
+        <input type="time" value="${time12to24(session.start)}" style="padding:4px 6px;border:1px solid var(--border);border-radius:6px;" onchange="updateSessionDateTime('${wo.id}',${idx},'startTime',this.value)">
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;">■
+        <input type="date" value="${session.endDate || ''}" style="padding:4px 6px;border:1px solid var(--border);border-radius:6px;" onchange="updateSessionDateTime('${wo.id}',${idx},'endDate',this.value)">
+        <input type="time" value="${time12to24(session.end)}" style="padding:4px 6px;border:1px solid var(--border);border-radius:6px;" onchange="updateSessionDateTime('${wo.id}',${idx},'endTime',this.value)">
+      </label>
+      ${duration}
+      <button class="btn btn-gray btn-sm" style="margin-left:auto;" onclick="woSessionRemove('${wo.id}',${idx})">✕ Remove</button>
+    </div>
+  </div>`;
+}
+
+function woCardHTML(wo, ownerMode) {
+  const sessions = wo.sessions || [];
+  const hasActiveSession = sessions.some(s => !s.end);
+  let body = sessions.map((s, i) => ownerMode ? woSessionRowEditHTML(wo, s, i) : woSessionRowHTML(wo, s, i)).join('');
+  if (ownerMode) {
+    body += `<button class="btn btn-green btn-sm" onclick="addEmptySession('${wo.id}')">+ Add Time Entry</button>`;
+  } else if (!hasActiveSession) {
+    body += `<button class="btn btn-green btn-sm" onclick="openWOStartModal('${wo.id}')">▶ ${sessions.length ? 'Start Another Session' : 'Start'}</button>`;
+  }
+
+  const hidden = wo.active === false;
+  const collapsed = ownerMode && !ownerWOExpanded.has(wo.id);
+
+  const belowDetailsHTML = `
+    <div style="margin:10px 0;">${body}</div>
+    ${(wo.materials || []).length ? `<div style="font-size:.85rem;color:var(--gray);margin-bottom:10px;">
+      <strong>Materials:</strong> ${wo.materials.map(m => {
+        const mat = db.materials.find(x => x.id === m.materialId);
+        return mat ? `${esc(mat.name)} — ${m.qty}${mat.unit ? ' ' + esc(mat.unit) : ''}` : '';
+      }).filter(Boolean).join(', ')}
+    </div>` : ''}
+    <div style="margin-bottom:10px;">
+      <input type="text" maxlength="160" placeholder="Add a note…" value="${esc(wo.note || '')}"
+        style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:.85rem;"
+        oninput="saveWONote('${wo.id}', this.value)">
+    </div>
+    <div class="job-actions">
+      <button class="btn btn-gray btn-sm" onclick="openWOModal('${wo.id}')">Edit</button>
+      <button class="btn ${wo.status === 'completed' ? 'btn-orange' : 'btn-green'} btn-sm" onclick="toggleWOStatus('${wo.id}')">${wo.status === 'completed' ? '↺ Reopen' : '✓ Mark Complete'}</button>
+      ${ownerMode ? `<button class="btn ${hidden ? 'btn-green' : 'btn-orange'} btn-sm" onclick="toggleWOActive('${wo.id}')">${hidden ? '👁 Make Visible to Crews' : '🙈 Hide from Crews'}</button>` : ''}
+      ${ownerMode ? `<button class="btn btn-red btn-sm" style="margin-left:auto;" onclick="deleteWorkOrder('${wo.id}')">✕ Delete</button>` : ''}
+    </div>`;
+
+  return `<div class="job-card" style="${ownerMode && hidden ? 'opacity:.7;' : ''}">
+    <div class="job-top">
+      <div>
+        <div class="job-title">${esc(wo.propertyName)} ${woStatusLabel(wo)}${ownerMode && hidden ? ' <span class="badge badge-gray">🙈 Hidden from crews</span>' : ''}</div>
+        ${wo.propertyAddress ? `<div class="job-addr">${esc(wo.propertyAddress)}</div>` : ''}
+        <div style="font-size:.85rem;color:var(--gray);margin-top:4px;">📅 ${shortDate(wo.date)}</div>
+        <div style="font-size:1.15rem;font-weight:600;margin-top:6px;white-space:pre-wrap;line-height:1.4;">${esc(wo.description)}</div>
+        ${ownerMode ? `<button class="btn btn-gray btn-sm" style="margin-top:8px;" onclick="toggleOwnerWOCollapse('${wo.id}')">${collapsed ? '▼ Show Details' : '▲ Hide Details'}</button>` : ''}
+      </div>
+    </div>
+    ${collapsed ? '' : belowDetailsHTML}
+  </div>`;
+}
+
+// Field-facing list — only ever shows work orders the owner has made visible.
+function renderWorkOrderList() {
+  const el = document.getElementById('wo-list');
+  if (!el) return;
+  let list = db.workOrders.filter(w => w.active !== false);
+  if (woFilter === 'open') list = list.filter(w => w.status !== 'completed');
+  else if (woFilter === 'completed') list = list.filter(w => w.status === 'completed');
+  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  if (!list.length) {
+    el.innerHTML = `<div class="card" style="color:var(--gray);text-align:center;padding:30px;">No ${woFilter !== 'all' ? woFilter + ' ' : ''}work orders.</div>`;
+    return;
+  }
+  el.innerHTML = list.map(wo => woCardHTML(wo, false)).join('');
+}
+
+// Owner-only management list — shows every work order, visible or hidden,
+// with the toggle to control what the field-facing page above shows.
+function renderOwnerWorkOrderList() {
+  const el = document.getElementById('owner-wo-list');
+  if (!el) return;
+  let list = [...db.workOrders];
+  if (ownerWOFilter === 'open') list = list.filter(w => w.status !== 'completed');
+  else if (ownerWOFilter === 'completed') list = list.filter(w => w.status === 'completed');
+  if (ownerWOActiveFilter === 'active') list = list.filter(w => w.active !== false);
+  else if (ownerWOActiveFilter === 'inactive') list = list.filter(w => w.active === false);
+  const q = ownerWOSearch.trim().toLowerCase();
+  if (q) list = list.filter(w => (w.propertyName || '').toLowerCase().includes(q) || (w.propertyAddress || '').toLowerCase().includes(q));
+  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  if (!list.length) {
+    el.innerHTML = `<div class="card" style="color:var(--gray);text-align:center;padding:30px;">No work orders match this filter.</div>`;
+    return;
+  }
+  el.innerHTML = list.map(wo => woCardHTML(wo, true)).join('');
+}
+
+// ══════════════════════════════════════════
+//  MATERIALS (Owner-only pricing; the work order modal/card only ever
+//  shows name + quantity, never price — see materialOptionsHTML above)
+// ══════════════════════════════════════════
+let editingMaterialId = null;
+
+function openMaterialModal(id) {
+  editingMaterialId = id || null;
+  const modal = document.getElementById('material-modal');
+  if (id) {
+    const m = db.materials.find(x => x.id === id);
+    document.getElementById('material-modal-title').textContent = 'Edit Material';
+    document.getElementById('mm-name').value = m.name;
+    document.getElementById('mm-price').value = m.price;
+    document.getElementById('mm-unit').value = m.unit || '';
+  } else {
+    document.getElementById('material-modal-title').textContent = 'Add Material';
+    document.getElementById('mm-name').value = '';
+    document.getElementById('mm-price').value = '';
+    document.getElementById('mm-unit').value = '';
+  }
+  modal.classList.add('open');
+}
+
+function closeMaterialModal() { document.getElementById('material-modal').classList.remove('open'); }
+
+function saveMaterial() {
+  const name = document.getElementById('mm-name').value.trim();
+  const price = parseFloat(document.getElementById('mm-price').value);
+  const unit = document.getElementById('mm-unit').value.trim();
+  if (!name) return alert('Enter a material name.');
+  if (isNaN(price) || price < 0) return alert('Enter a valid price per unit.');
+  if (editingMaterialId) {
+    const m = db.materials.find(x => x.id === editingMaterialId);
+    Object.assign(m, { name, price, unit });
+  } else {
+    db.materials.push({ id: 'mat' + Date.now(), name, price, unit, deleted: false });
+  }
+  saveDB(); closeMaterialModal(); renderMaterialList();
+}
+
+function deleteMaterial(id) {
+  if (!confirm('Remove this material? Past work order records are kept.')) return;
+  const m = db.materials.find(x => x.id === id);
+  if (m) m.deleted = true;
+  saveDB(); renderMaterialList();
+}
+
+function restoreMaterial(id) {
+  const m = db.materials.find(x => x.id === id);
+  if (m) { delete m.deleted; saveDB(); renderMaterialList(); }
+}
+
+// The price on a material record is its wholesale cost. The charge — what
+// gets billed on a work order — is that cost plus the Settings markup %.
+function materialCharge(mat) {
+  if (!mat) return 0;
+  return mat.price * (1 + (db.materialMarkup || 0) / 100);
+}
+
+function renderMaterialList() {
+  const el = document.getElementById('material-list');
+  if (!el) return;
+  if (!db.materials.length) { el.innerHTML = '<p style="color:var(--gray);font-size:.9rem;">No materials yet. Add one above.</p>'; return; }
+  const active = db.materials.filter(m => !m.deleted);
+  const removed = db.materials.filter(m => m.deleted);
+  el.innerHTML = active.map(m => `
+    <div class="crew-item">
+      <div style="flex:1;">
+        <div style="font-weight:600;">${esc(m.name)}</div>
+        <div style="font-size:.8rem;color:var(--gray);">Cost: ${fmtMoney(m.price)}${m.unit ? ' / ' + esc(m.unit) : ''} &nbsp;·&nbsp; Charge: ${fmtMoney(materialCharge(m))}${m.unit ? ' / ' + esc(m.unit) : ''}</div>
+      </div>
+      <button class="btn btn-gray btn-sm" onclick="openMaterialModal('${m.id}')">Edit</button>
+      <button class="btn btn-red btn-sm" onclick="deleteMaterial('${m.id}')">Delete</button>
+    </div>`).join('')
+    + (removed.length ? `<p style="font-size:.8rem;color:var(--gray);margin:10px 0 6px;">Removed:</p>` + removed.map(m => `
+    <div class="crew-item" style="opacity:.6;">
+      <div style="flex:1;">${esc(m.name)}</div>
+      <button class="btn btn-green btn-sm" onclick="restoreMaterial('${m.id}')">↺ Restore</button>
+    </div>`).join('') : '');
+}
+
+// ══════════════════════════════════════════
+//  JOB COSTS (Owner-only — labor + material cost per work order).
+//  Nothing here is ever rendered on the Grass, Snow, or Work Orders pages.
+// ══════════════════════════════════════════
+let jobCostFilter = 'open';
+let jobCostInvoicedFilter = 'all';
+let jobCostExpanded = new Set();
+let jobCostMaterialExpanded = new Set();
+
+function fmtMoney(n) {
+  return '$' + (n || 0).toFixed(2);
+}
+
+// Total person-hours for a work order: each session's duration × however
+// many people were on it (named headcount or entered headcount), summed
+// across every session the work order has had.
+function woLaborHours(wo) {
+  return (wo.sessions || []).reduce((sum, s) => {
+    const d = visitDiff(s, wo.date);
+    const mins = d && d > 0 ? d : 0;
+    const count = s.trackMode === 'named' ? (s.employeeIds || []).length : (s.headcount || 0);
+    return sum + (mins / 60) * count;
+  }, 0);
+}
+
+function woLaborCost(wo) { return woLaborHours(wo) * (db.laborRate || 0); }
+
+function woMaterialCost(wo) {
+  return (wo.materials || []).reduce((sum, m) => {
+    const mat = db.materials.find(x => x.id === m.materialId);
+    return sum + (mat ? mat.price * m.qty : 0);
+  }, 0);
+}
+
+// Charge is the cost with the Settings material markup % applied — what
+// gets billed to the customer for materials used on the work order.
+function woMaterialCharge(wo) {
+  return (wo.materials || []).reduce((sum, m) => {
+    const mat = db.materials.find(x => x.id === m.materialId);
+    return sum + (mat ? materialCharge(mat) * m.qty : 0);
+  }, 0);
+}
+
+function setJobCostFilter(filter) {
+  jobCostFilter = filter;
+  ['open', 'completed', 'all'].forEach(f => {
+    const btn = document.getElementById('jobcosts-filter-' + f);
+    if (btn) btn.className = 'btn btn-sm ' + (f === filter ? 'btn-green' : 'btn-gray');
+  });
+  renderJobCosts();
+}
+
+function setJobCostInvoicedFilter(filter) {
+  jobCostInvoicedFilter = filter;
+  document.getElementById('jobcosts-inv-all').className = 'btn btn-sm ' + (filter === 'all' ? 'btn-green' : 'btn-gray');
+  document.getElementById('jobcosts-inv-yes').className = 'btn btn-sm ' + (filter === 'invoiced' ? 'btn-green' : 'btn-gray');
+  document.getElementById('jobcosts-inv-no').className = 'btn btn-sm ' + (filter === 'notinvoiced' ? 'btn-green' : 'btn-gray');
+  renderJobCosts();
+}
+
+function toggleWOInvoiced(id) {
+  const wo = db.workOrders.find(x => x.id === id);
+  if (!wo) return;
+  wo.invoiced = !wo.invoiced;
+  wo.invoicedDate = wo.invoiced ? todayStr() : null;
+  saveDB(); renderJobCosts();
+}
+
+function toggleJobCostDetails(id) {
+  if (jobCostExpanded.has(id)) jobCostExpanded.delete(id);
+  else jobCostExpanded.add(id);
+  renderJobCosts();
+}
+
+function toggleJobCostMaterialDetails(id) {
+  if (jobCostMaterialExpanded.has(id)) jobCostMaterialExpanded.delete(id);
+  else jobCostMaterialExpanded.add(id);
+  renderJobCosts();
+}
+
+// Per-material line breakdown for the Job Costs "Details" toggle on materials.
+function woMaterialDetailRowsHTML(wo) {
+  const materials = wo.materials || [];
+  if (!materials.length) {
+    return `<tr><td colspan="6" style="padding:6px 10px;color:var(--gray);">No materials logged.</td></tr>`;
+  }
+  return materials.map(m => {
+    const mat = db.materials.find(x => x.id === m.materialId);
+    if (!mat) return '';
+    const charge = materialCharge(mat);
+    return `<tr>
+      <td style="padding:6px 10px;">${esc(mat.name)}</td>
+      <td style="padding:6px 10px;">${m.qty}${mat.unit ? ' ' + esc(mat.unit) : ''}</td>
+      <td style="padding:6px 10px;">${fmtMoney(mat.price)}</td>
+      <td style="padding:6px 10px;">${fmtMoney(mat.price * m.qty)}</td>
+      <td style="padding:6px 10px;">${fmtMoney(charge)}</td>
+      <td style="padding:6px 10px;text-align:right;">${fmtMoney(charge * m.qty)}</td>
+    </tr>`;
+  }).filter(Boolean).join('');
+}
+
+// Per-session breakdown for the Job Costs "Details" toggle: who was on the
+// clock, what date, the start/stop stamps, and the hours that produced.
+function woSessionDetailRowsHTML(wo) {
+  const sessions = wo.sessions || [];
+  if (!sessions.length) {
+    return `<tr><td colspan="5" style="padding:6px 10px;color:var(--gray);">No time logged yet.</td></tr>`;
+  }
+  return sessions.map(s => {
+    const label = s.trackMode === 'named'
+      ? (esc((s.employeeIds || []).map(id => db.employees.find(e => e.id === id)?.name).filter(Boolean).join(', ')) || 'Employees')
+      : `👥 ${s.headcount} employee${s.headcount === 1 ? '' : 's'}`;
+    const d = visitDiff(s, wo.date);
+    const hrs = (d && d > 0 ? d / 60 : 0).toFixed(2);
+    return `<tr>
+      <td style="padding:6px 10px;">${label}</td>
+      <td style="padding:6px 10px;">${shortDate(s.startDate || wo.date)}</td>
+      <td style="padding:6px 10px;">${s.start || '—'}</td>
+      <td style="padding:6px 10px;">${s.end || '—'}</td>
+      <td style="padding:6px 10px;text-align:right;">${hrs} hrs</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderJobCosts() {
+  const rateEl = document.getElementById('jobcosts-rate-display');
+  if (rateEl) rateEl.textContent = fmtMoney(db.laborRate) + '/hr';
+  const markupEl = document.getElementById('jobcosts-markup-display');
+  if (markupEl) markupEl.textContent = (db.materialMarkup || 0) + '%';
+
+  const el = document.getElementById('jobcosts-content');
+  if (!el) return;
+  let list = [...db.workOrders];
+  if (jobCostFilter === 'open') list = list.filter(w => w.status !== 'completed');
+  else if (jobCostFilter === 'completed') list = list.filter(w => w.status === 'completed');
+  if (jobCostInvoicedFilter === 'invoiced') list = list.filter(w => w.invoiced);
+  else if (jobCostInvoicedFilter === 'notinvoiced') list = list.filter(w => !w.invoiced);
+  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  if (!list.length) {
+    el.innerHTML = `<div class="card" style="color:var(--gray);text-align:center;padding:30px;">No matching work orders.</div>`;
+    return;
+  }
+
+  let grandLabor = 0, grandMaterialCost = 0, grandMaterialCharge = 0;
+  const rows = list.map(wo => {
+    const laborHrs = woLaborHours(wo);
+    const laborCost = woLaborCost(wo);
+    const matCost = woMaterialCost(wo);
+    const matCharge = woMaterialCharge(wo);
+    grandLabor += laborCost; grandMaterialCost += matCost; grandMaterialCharge += matCharge;
+    const hasMaterials = (wo.materials || []).length > 0;
+    const invoicedCell = `<label style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;font-size:.78rem;">
+      <input type="checkbox" ${wo.invoiced ? 'checked' : ''} onchange="toggleWOInvoiced('${wo.id}')">
+      ${wo.invoiced ? `<span style="color:var(--green);font-weight:600;">${shortDate(wo.invoicedDate)}</span>` : '<span style="color:#aaa;">Not invoiced</span>'}
+    </label>`;
+    const expanded = jobCostExpanded.has(wo.id);
+    const matExpanded = jobCostMaterialExpanded.has(wo.id);
+    const detailRow = expanded ? `<tr>
+      <td colspan="7" style="background:#f8f8f8;padding:8px;">
+        <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+          <thead><tr style="color:var(--gray);text-align:left;">
+            <th style="padding:4px 10px;">Who</th><th style="padding:4px 10px;">Date</th><th style="padding:4px 10px;">Start</th><th style="padding:4px 10px;">End</th><th style="padding:4px 10px;text-align:right;">Hours</th>
+          </tr></thead>
+          <tbody>${woSessionDetailRowsHTML(wo)}</tbody>
+        </table>
+      </td>
+    </tr>` : '';
+    const matDetailRow = matExpanded ? `<tr>
+      <td colspan="7" style="background:#f8f8f8;padding:8px;">
+        <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+          <thead><tr style="color:var(--gray);text-align:left;">
+            <th style="padding:4px 10px;">Material</th><th style="padding:4px 10px;">Qty</th><th style="padding:4px 10px;">Cost / Unit</th><th style="padding:4px 10px;">Cost Total</th><th style="padding:4px 10px;">Charge / Unit</th><th style="padding:4px 10px;text-align:right;">Charge Total</th>
+          </tr></thead>
+          <tbody>${woMaterialDetailRowsHTML(wo)}</tbody>
+        </table>
+      </td>
+    </tr>` : '';
+    return `<tr>
+      <td><strong>${esc(wo.propertyName)}</strong><br><span style="font-size:.78rem;color:var(--gray);">${esc(wo.description)}</span></td>
+      <td style="text-align:center;">${shortDate(wo.date)}</td>
+      <td style="text-align:center;font-size:.85rem;">${laborHrs.toFixed(2)} hrs<br><strong>${fmtMoney(laborCost)}</strong><br>
+        <button class="btn btn-gray btn-sm" style="margin-top:4px;padding:3px 8px;font-size:.72rem;min-height:0;min-width:0;" onclick="toggleJobCostDetails('${wo.id}')">${expanded ? '▲ Hide' : '▼ Details'}</button>
+      </td>
+      <td style="text-align:center;font-size:.85rem;">${hasMaterials ? `${fmtMoney(matCost)}` : '—'}</td>
+      <td style="text-align:center;font-size:.85rem;">${hasMaterials ? `<strong>${fmtMoney(matCharge)}</strong><br>
+        <button class="btn btn-gray btn-sm" style="margin-top:4px;padding:3px 8px;font-size:.72rem;min-height:0;min-width:0;" onclick="toggleJobCostMaterialDetails('${wo.id}')">${matExpanded ? '▲ Hide' : '▼ Details'}</button>` : '—'}
+      </td>
+      <td style="text-align:center;font-weight:700;">${fmtMoney(laborCost + matCharge)}</td>
+      <td style="text-align:center;">${invoicedCell}</td>
+    </tr>${detailRow}${matDetailRow}`;
+  }).join('');
+
+  el.innerHTML = `<div class="card" style="overflow-x:auto;">
+    <table class="summary-table">
+      <thead><tr><th>Work Order</th><th>Date</th><th>Labor</th><th>Material Cost</th><th>Material Charge</th><th>Total</th><th>Invoiced</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr class="total-row">
+        <td colspan="2">TOTAL</td>
+        <td style="text-align:center;">${fmtMoney(grandLabor)}</td>
+        <td style="text-align:center;">${fmtMoney(grandMaterialCost)}</td>
+        <td style="text-align:center;">${fmtMoney(grandMaterialCharge)}</td>
+        <td style="text-align:center;">${fmtMoney(grandLabor + grandMaterialCharge)}</td>
+        <td></td>
+      </tr></tfoot>
+    </table>
+  </div>`;
+}
+
+// ══════════════════════════════════════════
 //  DROPDOWN POPULATION
 // ══════════════════════════════════════════
 function populateAllDropdowns() { populateOwnerDropdowns(); populateEmpDropdowns(); populateSnowDropdowns(); }
@@ -1946,12 +3075,42 @@ function populateSnowDropdowns() {
 //  SETTINGS
 // ══════════════════════════════════════════
 function renderSettings() {
+  document.getElementById('company-name-input').value = db.companyName || '';
   document.getElementById('default-tab-select').value = db.defaultTab || 'employee';
+  document.getElementById('labor-rate-input').value = db.laborRate || '';
+  document.getElementById('material-markup-input').value = db.materialMarkup || '';
+}
+
+function saveCompanyName() {
+  db.companyName = document.getElementById('company-name-input').value.trim();
+  saveDB();
+  applyBranding();
+}
+
+function applyBranding() {
+  const name = (db.companyName || '').trim() || 'NE Landscapes';
+  document.getElementById('brand-name').textContent = name;
+  document.getElementById('pin-brand-name').textContent = name;
+  document.title = name + ' — Weekly Run';
 }
 
 function saveDefaultTab() {
   db.defaultTab = document.getElementById('default-tab-select').value;
   saveDB();
+}
+
+function saveLaborRate() {
+  const val = parseFloat(document.getElementById('labor-rate-input').value);
+  db.laborRate = (!isNaN(val) && val >= 0) ? val : 0;
+  saveDB();
+}
+
+function saveMaterialMarkup() {
+  const val = parseFloat(document.getElementById('material-markup-input').value);
+  db.materialMarkup = (!isNaN(val) && val >= 0) ? val : 0;
+  saveDB();
+  renderMaterialList();
+  renderJobCosts();
 }
 
 function savePin() {
@@ -1994,13 +3153,23 @@ function rerenderAll() {
     if (focused && focused.tagName === 'INPUT' && focused.closest('#snow-job-list')) return;
     renderSnowJobList();
   }
+  if (activeView === 'view-workorders') {
+    const focused = document.activeElement;
+    if (focused && focused.tagName === 'INPUT' && focused.closest('#wo-list')) return;
+    renderWorkOrderList();
+  }
   if (activeView === 'view-owner') {
     renderPropList();
     renderCrewList();
     renderSnowPropList();
+    renderEmployeeList();
+    renderMaterialList();
+    const focused = document.activeElement;
+    if (!(focused && focused.tagName === 'INPUT' && focused.closest('#owner-wo-list'))) renderOwnerWorkOrderList();
     const activeTab = document.querySelector('#view-owner [id^="owner-"]:not([style*="display: none"]):not([style*="display:none"])');
     if (activeTab?.id === 'owner-summary') renderSummary();
     if (activeTab?.id === 'owner-snowsummary') renderSnowSummary();
+    if (activeTab?.id === 'owner-jobcosts') renderJobCosts();
     if (activeTab?.id === 'owner-settings') renderSettings();
   }
 }
@@ -2009,6 +3178,7 @@ function rerenderAll() {
 //  INIT
 // ══════════════════════════════════════════
 (function init() {
+  applyBranding();
   document.getElementById('emp-date').value = todayStr();
   document.getElementById('sum-week').value = weekStart(todayStr());
   document.getElementById('snow-date').value = todayStr();
