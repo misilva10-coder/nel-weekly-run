@@ -29,6 +29,10 @@
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f0; color: #222; min-height: 100vh; }
 
   /* ── NAV ── */
+  #sync-status { pointer-events: none; position: fixed; right: 12px; bottom: 12px; z-index: 9999; padding: 6px 12px; border-radius: 999px; font-size: .8rem; font-weight: 600; box-shadow: 0 2px 6px rgba(0,0,0,.2); max-width: calc(100vw - 24px); }
+  #sync-status.sync-ok { background: #e6f4e6; color: #1e5e1e; }
+  #sync-status.sync-wait { background: #fff3cd; color: #856404; }
+  #sync-status.sync-bad { background: #f8d7da; color: #842029; }
   nav { background: var(--green); color: #fff; padding: 8px 16px; display: flex; align-items: center; justify-content: space-between; min-height: 56px; flex-wrap: wrap; gap: 8px; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
   nav .brand { font-size: 1.1rem; font-weight: 700; letter-spacing: .5px; }
   nav .nav-links { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -323,6 +327,9 @@
     </div>
   </div>
 </div>
+
+<!-- CLOUD SYNC STATUS -->
+<div id="sync-status" class="sync-wait">Connecting to cloud…</div>
 
 <!-- FIREBASE STATUS BANNER -->
 <div id="fb-status" style="display:none;background:#fff3cd;color:#856404;padding:8px 16px;font-size:.85rem;text-align:center;border-bottom:1px solid #ffc107;"></div>
@@ -699,6 +706,73 @@ function saveLocalCache() {
 let fbRef = null;
 let _fbSaveTimeout = null;
 
+// ── Cloud sync status ───────────────────────────────────────────
+// Every change is written to Firebase straight away. The pill in the
+// bottom corner always shows whether this device's data is safely in the
+// cloud, so a failed save is never silent again.
+const PENDING_KEY = 'nel_landscape_v1_pending'; // set while a change has not reached Firebase yet
+let _fbOnline = false, _fbReady = false, _fbSaving = false, _fbError = '';
+
+function setPending(on) {
+  try { on ? localStorage.setItem(PENDING_KEY, '1') : localStorage.removeItem(PENDING_KEY); } catch {}
+}
+function isPending() {
+  try { return localStorage.getItem(PENDING_KEY) === '1'; } catch { return false; }
+}
+
+function updateSyncStatus() {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  let text, cls;
+  if (_fbError)            { text = '⚠ Not saved to cloud: ' + _fbError; cls = 'sync-bad'; }
+  else if (!fbRef)         { text = '⚠ Cloud sync off: saved on this device only'; cls = 'sync-bad'; }
+  else if (!_fbReady)      { text = 'Connecting to cloud…'; cls = 'sync-wait'; }
+  else if (!_fbOnline)     { text = isPending() ? '⚠ Offline: changes will upload when back online' : 'Offline'; cls = isPending() ? 'sync-bad' : 'sync-wait'; }
+  else if (_fbSaving || isPending()) { text = 'Saving to cloud…'; cls = 'sync-wait'; }
+  else                     { text = '✓ Saved to cloud'; cls = 'sync-ok'; }
+  el.textContent = text;
+  el.className = cls;
+}
+
+// Firebase refuses values that are undefined; a JSON round trip drops them
+// so one bad field can't silently block the whole save.
+function cleanForFirebase(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function pushToFirebase() {
+  if (!fbRef || !_fbReady) { updateSyncStatus(); return Promise.resolve(); }
+  _fbSaving = true;
+  updateSyncStatus();
+  let p;
+  try { p = fbRef.set(cleanForFirebase(db)); }
+  catch (e) { p = Promise.reject(e); }
+  return p.then(() => {
+    _fbSaving = false; _fbError = '';
+    setPending(false);
+    backupDaily();
+    updateSyncStatus();
+  }).catch(e => {
+    _fbSaving = false;
+    _fbError = (e && e.message) || String(e);
+    console.error('Firebase save failed', e);
+    updateSyncStatus();
+  });
+}
+
+// Once a day, keep a dated copy in Firebase (nel_landscape_backups/YYYY-MM-DD)
+// so data can be restored even if the main copy is ever wiped.
+function backupDaily() {
+  if (!fbRef || !hasRealData(db)) return;
+  const day = new Date().toISOString().slice(0, 10);
+  let last = '';
+  try { last = localStorage.getItem('nel_landscape_v1_lastBackup') || ''; } catch {}
+  if (last === day) return;
+  firebase.database().ref('nel_landscape_backups/' + day).set(cleanForFirebase(db)).then(() => {
+    try { localStorage.setItem('nel_landscape_v1_lastBackup', day); } catch {}
+  }).catch(e => console.error('Firebase backup failed', e));
+}
+
 // True when a data object holds anything beyond the blank defaults.
 function hasRealData(d) {
   if (!d) return false;
@@ -706,79 +780,100 @@ function hasRealData(d) {
   return n(d.properties) + n(d.snowProperties) + n(d.workOrders) + n(d.employees) + n(d.logs) + n(d.snowLogs) > 0;
 }
 
+function applyRemote(remote) {
+  if (!remote.properties) remote.properties = [];
+  if (!remote.logs)  remote.logs  = {};
+  if (!remote.skips) remote.skips = {};
+  if (!remote.snowProperties) remote.snowProperties = [];
+  if (!remote.snowLogs)  remote.snowLogs  = {};
+  if (!remote.snowSkips) remote.snowSkips = {};
+  if (!remote.defaultTab) remote.defaultTab = 'employee';
+  if (remote.companyName == null) remote.companyName = '';
+  if (!remote.employees) remote.employees = [];
+  if (!remote.workOrders) remote.workOrders = [];
+  if (!remote.materials) remote.materials = [];
+  if (remote.laborRate == null) remote.laborRate = 0;
+  if (remote.materialMarkup == null) remote.materialMarkup = 0;
+  migrateSnowLogs(remote.snowLogs);
+  migrateWorkOrders(remote.workOrders);
+  db = remote;
+  saveLocalCache();
+  applyBranding();
+  rerenderAll();
+}
+
 function initFirebase() {
   if (FIREBASE_CONFIG.apiKey === 'PASTE_HERE') {
     document.getElementById('fb-status').textContent = '⚠ Firebase not configured — running in local-only mode. See index.html for setup instructions.';
     document.getElementById('fb-status').style.display = 'block';
+    updateSyncStatus();
     return;
   }
   try {
     const app = firebase.initializeApp(FIREBASE_CONFIG);
     const database = firebase.database(app);
     fbRef = database.ref(DB_PATH);
+    updateSyncStatus();
+
+    // Track whether this device can reach Firebase right now.
+    database.ref('.info/connected').on('value', snap => {
+      _fbOnline = snap.val() === true;
+      // Back online with changes that never made it up: send them now.
+      if (_fbOnline && _fbReady && isPending()) pushToFirebase();
+      updateSyncStatus();
+    });
 
     // Sign in anonymously first — the database rules require auth != null,
     // so nothing attaches until Firebase has issued this device a token.
-    // This blocks random internet traffic from hitting the open REST
-    // endpoint directly; it does not add per-user permissions (every
-    // visitor who loads this page gets a token the same way).
     firebase.auth().signInAnonymously().then(() => {
-      // Push local data to Firebase on first connect if Firebase has no real
-      // data (missing, or just the blank defaults) but this device does.
-      // This stops a blank Firebase copy from wiping out a device's saved data.
-      fbRef.once('value', snapshot => {
-        const remote = snapshot.val();
-        if (!hasRealData(remote) && hasRealData(db)) {
-          fbRef.set(db);
-        } else if (!snapshot.exists()) {
-          fbRef.set(db);
-        }
-      });
+      return fbRef.once('value');
+    }).then(snapshot => {
+      _fbReady = true;
+      const remote = snapshot.val();
+      // This device has changes that never reached the cloud, or the cloud
+      // copy is blank while this device has real data: upload this device's copy.
+      if (isPending() && hasRealData(db) || (!hasRealData(remote) && hasRealData(db)) || !snapshot.exists()) {
+        pushToFirebase();
+      }
 
       // Real-time listener — fires immediately and on every remote change
-      fbRef.on('value', snapshot => {
-        const remote = snapshot.val();
-        if (!remote) return;
-        // Never replace this device's data with a blank Firebase copy.
-        if (!hasRealData(remote) && hasRealData(db)) return;
-        if (!remote.properties) remote.properties = [];
-        if (!remote.logs)  remote.logs  = {};
-        if (!remote.skips) remote.skips = {};
-        if (!remote.snowProperties) remote.snowProperties = [];
-        if (!remote.snowLogs)  remote.snowLogs  = {};
-        if (!remote.snowSkips) remote.snowSkips = {};
-        if (!remote.defaultTab) remote.defaultTab = 'employee';
-        if (remote.companyName == null) remote.companyName = '';
-        if (!remote.employees) remote.employees = [];
-        if (!remote.workOrders) remote.workOrders = [];
-        if (!remote.materials) remote.materials = [];
-        if (remote.laborRate == null) remote.laborRate = 0;
-        if (remote.materialMarkup == null) remote.materialMarkup = 0;
-        migrateSnowLogs(remote.snowLogs);
-        migrateWorkOrders(remote.workOrders);
-        db = remote;
-        saveLocalCache();
-        applyBranding();
-        rerenderAll();
+      fbRef.on('value', snap => {
+        const r = snap.val();
+        if (!r) return;
+        // Never replace this device's data with a blank cloud copy, and don't
+        // overwrite changes that are still on their way up.
+        if (!hasRealData(r) && hasRealData(db)) return;
+        if (isPending()) return;
+        applyRemote(r);
+      }, err => {
+        _fbError = 'cannot read cloud data (' + err.message + ')';
+        updateSyncStatus();
       });
 
       document.getElementById('fb-status').style.display = 'none';
+      updateSyncStatus();
     }).catch(e => {
-      document.getElementById('fb-status').textContent = '⚠ Firebase sign-in failed — running in local-only mode: ' + e.message;
+      _fbError = 'sign-in or read failed (' + e.message + ')';
+      document.getElementById('fb-status').textContent = '⚠ Cloud sync failed — changes are only on this device: ' + e.message;
       document.getElementById('fb-status').style.display = 'block';
+      updateSyncStatus();
     });
   } catch (e) {
+    _fbError = e.message;
     document.getElementById('fb-status').textContent = '⚠ Firebase error: ' + e.message;
     document.getElementById('fb-status').style.display = 'block';
+    updateSyncStatus();
   }
 }
 
 function saveDB() {
   saveLocalCache();
+  setPending(true);
+  updateSyncStatus();
   if (!fbRef) return;
-  // Debounce rapid saves (e.g. note typing) to avoid hammering Firebase
+  // Short debounce so typing a note doesn't send a write per keystroke
   clearTimeout(_fbSaveTimeout);
-  _fbSaveTimeout = setTimeout(() => fbRef.set(db), 300);
+  _fbSaveTimeout = setTimeout(pushToFirebase, 300);
 }
 
 let db = loadLocalCache();
