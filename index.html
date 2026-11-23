@@ -699,6 +699,13 @@ function saveLocalCache() {
 let fbRef = null;
 let _fbSaveTimeout = null;
 
+// True when a data object holds anything beyond the blank defaults.
+function hasRealData(d) {
+  if (!d) return false;
+  const n = x => Array.isArray(x) ? x.length : (x && typeof x === 'object' ? Object.keys(x).length : 0);
+  return n(d.properties) + n(d.snowProperties) + n(d.workOrders) + n(d.employees) + n(d.logs) + n(d.snowLogs) > 0;
+}
+
 function initFirebase() {
   if (FIREBASE_CONFIG.apiKey === 'PASTE_HERE') {
     document.getElementById('fb-status').textContent = '⚠ Firebase not configured — running in local-only mode. See index.html for setup instructions.';
@@ -716,9 +723,14 @@ function initFirebase() {
     // endpoint directly; it does not add per-user permissions (every
     // visitor who loads this page gets a token the same way).
     firebase.auth().signInAnonymously().then(() => {
-      // Push local data to Firebase on first connect if Firebase is empty
+      // Push local data to Firebase on first connect if Firebase has no real
+      // data (missing, or just the blank defaults) but this device does.
+      // This stops a blank Firebase copy from wiping out a device's saved data.
       fbRef.once('value', snapshot => {
-        if (!snapshot.exists()) {
+        const remote = snapshot.val();
+        if (!hasRealData(remote) && hasRealData(db)) {
+          fbRef.set(db);
+        } else if (!snapshot.exists()) {
           fbRef.set(db);
         }
       });
@@ -727,6 +739,8 @@ function initFirebase() {
       fbRef.on('value', snapshot => {
         const remote = snapshot.val();
         if (!remote) return;
+        // Never replace this device's data with a blank Firebase copy.
+        if (!hasRealData(remote) && hasRealData(db)) return;
         if (!remote.properties) remote.properties = [];
         if (!remote.logs)  remote.logs  = {};
         if (!remote.skips) remote.skips = {};
