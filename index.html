@@ -277,6 +277,7 @@
     </div>
     <div style="margin-bottom:6px;font-size:.88rem;color:var(--gray);">What is the work?</div>
     <div class="form-row"><textarea id="wom-desc" rows="3" placeholder="e.g. Trim hedges, remove fallen tree, mulch install — drag the corner to expand for more detail"></textarea></div>
+    <div style="margin-bottom:6px;font-size:.88rem;color:var(--gray);">Date (optional — filled in from the last time entry when completed)</div>
     <div class="form-row"><input type="date" id="wom-date" style="max-width:170px;"></div>
     <div style="margin:10px 0 6px;font-size:.88rem;color:var(--gray);">Materials used</div>
     <div id="wom-materials" style="margin-bottom:6px;"></div>
@@ -1690,7 +1691,8 @@ function visitDurStr(v, keyDate) {
   return d === null || d < 0 ? '?' : fmtMin(d);
 }
 
-function shortDate(dateStr) { // "Wed 11/4"
+function shortDate(dateStr) { // "Wed 11/4" ("—" when there's no date)
+  if (!dateStr) return '—';
   const [, m, d] = dateStr.split('-').map(Number);
   return `${dayName(dateStr)} ${m}/${d}`;
 }
@@ -2555,7 +2557,7 @@ function openWOModal(id) {
     document.getElementById('wom-custom-name').value = wo.propertyName;
     document.getElementById('wom-custom-addr').value = wo.propertyAddress || '';
     document.getElementById('wom-desc').value = wo.description;
-    document.getElementById('wom-date').value = wo.date;
+    document.getElementById('wom-date').value = wo.date || '';
     document.getElementById('wom-note').value = wo.note || '';
     womMaterials = (wo.materials || []).map(m => ({ ...m }));
   } else {
@@ -2565,7 +2567,7 @@ function openWOModal(id) {
     document.getElementById('wom-custom-name').value = '';
     document.getElementById('wom-custom-addr').value = '';
     document.getElementById('wom-desc').value = '';
-    document.getElementById('wom-date').value = todayStr();
+    document.getElementById('wom-date').value = '';
     document.getElementById('wom-note').value = '';
     womMaterials = [];
   }
@@ -2578,7 +2580,7 @@ function closeWOModal() { document.getElementById('wo-modal').classList.remove('
 function saveWorkOrder() {
   const propVal = document.getElementById('wom-property').value;
   const description = document.getElementById('wom-desc').value.trim();
-  const date = document.getElementById('wom-date').value || todayStr();
+  const date = document.getElementById('wom-date').value || '';
   const note = document.getElementById('wom-note').value.trim();
 
   let propertyName, propertyAddress;
@@ -2621,8 +2623,23 @@ function deleteWorkOrder(id) {
 function toggleWOStatus(id) {
   const wo = db.workOrders.find(x => x.id === id);
   if (!wo) return;
-  wo.status = wo.status === 'completed' ? 'open' : 'completed';
+  if (wo.status === 'completed') {
+    wo.status = 'open'; // reopening leaves the date as it is
+  } else {
+    wo.status = 'completed';
+    const last = woLastEntryDate(wo);
+    if (last) wo.date = last;
+  }
   saveDB(); renderAllWOViews();
+}
+
+// Date of a work order's most recent time entry (its stop date, or its start
+// date if it was never stopped). Empty string when there are no dated entries.
+function woLastEntryDate(wo) {
+  return (wo.sessions || []).reduce((latest, s) => {
+    const d = (s && (s.endDate || s.startDate)) || '';
+    return d > latest ? d : latest;
+  }, '');
 }
 
 // Owner-only visibility switch: an inactive work order is simply left out of
@@ -2858,7 +2875,7 @@ function woCardHTML(wo, ownerMode) {
       <div>
         <div class="job-title">${esc(wo.propertyName)} ${woStatusLabel(wo)}${ownerMode && hidden ? ' <span class="badge badge-gray">🙈 Hidden from crews</span>' : ''}</div>
         ${wo.propertyAddress ? `<div class="job-addr">${esc(wo.propertyAddress)}</div>` : ''}
-        <div style="font-size:.85rem;color:var(--gray);margin-top:4px;">📅 ${shortDate(wo.date)}</div>
+        <div style="font-size:.85rem;color:var(--gray);margin-top:4px;">📅 ${wo.date ? shortDate(wo.date) : 'No date yet'}</div>
         <div style="font-size:1.15rem;font-weight:600;margin-top:6px;white-space:pre-wrap;line-height:1.4;">${esc(wo.description)}</div>
         ${ownerMode ? `<button class="btn btn-gray btn-sm" style="margin-top:8px;" onclick="toggleOwnerWOCollapse('${wo.id}')">${collapsed ? '▼ Show Details' : '▲ Hide Details'}</button>` : ''}
       </div>
