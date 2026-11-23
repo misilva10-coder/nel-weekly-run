@@ -284,6 +284,10 @@
     <button type="button" class="btn btn-gray btn-sm" style="margin-bottom:10px;" onclick="addWOMaterialRow()">+ Add material</button>
     <div class="form-row"><input type="text" id="wom-note" placeholder="Note (optional)"></div>
     <p style="font-size:.78rem;color:var(--gray);margin-top:4px;">Who's working gets picked on the field when time is started, not here.</p>
+    <div id="wom-visibility-block" style="display:none;margin-top:10px;">
+      <div style="margin-bottom:6px;font-size:.88rem;color:var(--gray);">Visibility to crews</div>
+      <button type="button" class="btn btn-sm" id="wom-visibility-btn" onclick="toggleWOModalVisibility()"></button>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-gray" onclick="closeWOModal()">Cancel</button>
       <button class="btn btn-green" onclick="saveWorkOrder()">Save</button>
@@ -2552,8 +2556,25 @@ function removeWOMaterialRow(i) {
   renderWOMaterialRows();
 }
 
+// Crew visibility picked in the work order form (owner only). Hidden work
+// orders stay off the field Work Orders page until made visible.
+let womVisible = true;
+
+function renderWOModalVisibility() {
+  const btn = document.getElementById('wom-visibility-btn');
+  btn.className = 'btn btn-sm ' + (womVisible ? 'btn-green' : 'btn-orange');
+  btn.textContent = womVisible ? '👁 Visible to Crews (tap to hide)' : '🙈 Hidden from Crews (tap to show)';
+}
+
+function toggleWOModalVisibility() {
+  womVisible = !womVisible;
+  renderWOModalVisibility();
+}
+
 function openWOModal(id) {
   editingWOId = id || null;
+  const ownerMode = document.getElementById('view-owner').classList.contains('active');
+  document.getElementById('wom-visibility-block').style.display = ownerMode ? 'block' : 'none';
   document.getElementById('wom-property').innerHTML = propertySelectOptionsHTML();
 
   if (id) {
@@ -2567,6 +2588,7 @@ function openWOModal(id) {
     document.getElementById('wom-date').value = wo.date || '';
     document.getElementById('wom-note').value = wo.note || '';
     womMaterials = (wo.materials || []).map(m => ({ ...m }));
+    womVisible = wo.active !== false;
   } else {
     document.getElementById('wo-modal-title').textContent = 'New Work Order';
     document.getElementById('wom-property').value = '';
@@ -2577,7 +2599,9 @@ function openWOModal(id) {
     document.getElementById('wom-date').value = '';
     document.getElementById('wom-note').value = '';
     womMaterials = [];
+    womVisible = true;
   }
+  renderWOModalVisibility();
   renderWOMaterialRows();
   document.getElementById('wo-modal').classList.add('open');
 }
@@ -2607,15 +2631,18 @@ function saveWorkOrder() {
     .filter(r => r.materialId && parseFloat(r.qty) > 0)
     .map(r => ({ materialId: r.materialId, qty: parseFloat(r.qty) }));
 
+  const ownerMode = document.getElementById('view-owner').classList.contains('active');
+
   if (editingWOId) {
     const wo = db.workOrders.find(x => x.id === editingWOId);
     Object.assign(wo, { propertyName, propertyAddress, description, date, note, materials });
+    if (ownerMode) wo.active = womVisible;
   } else {
     db.workOrders.push({
       id: 'wo' + Date.now(),
       propertyName, propertyAddress, description, date, note, materials,
       sessions: [],
-      status: 'open', active: true, createdAt: Date.now()
+      status: 'open', active: ownerMode ? womVisible : true, createdAt: Date.now()
     });
   }
   saveDB(); closeWOModal(); renderAllWOViews();
