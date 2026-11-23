@@ -673,6 +673,7 @@ function loadLocalCache() {
   try {
     const saved = JSON.parse(localStorage.getItem(DB_KEY));
     if (!saved) return defaultDB();
+    if (!saved.properties) saved.properties = [];
     if (!saved.logs)  saved.logs  = {};
     if (!saved.skips) saved.skips = {};
     if (!saved.snowProperties) saved.snowProperties = [];
@@ -726,6 +727,7 @@ function initFirebase() {
       fbRef.on('value', snapshot => {
         const remote = snapshot.val();
         if (!remote) return;
+        if (!remote.properties) remote.properties = [];
         if (!remote.logs)  remote.logs  = {};
         if (!remote.skips) remote.skips = {};
         if (!remote.snowProperties) remote.snowProperties = [];
