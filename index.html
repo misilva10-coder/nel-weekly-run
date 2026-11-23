@@ -2416,14 +2416,26 @@ function toggleOwnerWOCollapse(id) {
 // "10 Elm"). Display order only: the stored route order is left alone.
 const propNameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 function byPropName(a, b) {
-  return propNameCollator.compare((a.name || '').trim(), (b.name || '').trim());
+  return propNameCollator.compare((a.name || '').trim(), (b.name || '').trim())
+    || propNameCollator.compare((a.address || '').trim(), (b.address || '').trim());
+}
+
+// Each option shows "Name — Address" so properties for the same client can be told
+// apart; the address is also the hover tooltip. Properties with no address show the
+// name alone.
+function propertyOptionHTML(kind, p) {
+  const name = (p.name || '').trim();
+  const addr = (p.address || '').trim();
+  const label = addr ? `${name} — ${addr}` : name;
+  const title = addr ? ` title="${esc(addr)}"` : '';
+  return `<option value="${kind}:${p.id}"${title}>${esc(label)}</option>`;
 }
 
 function propertySelectOptionsHTML() {
   const grassOpts = [...db.properties].filter(p => !p.deleted).sort(byPropName)
-    .map(p => `<option value="grass:${p.id}">${esc(p.name)}</option>`).join('');
+    .map(p => propertyOptionHTML('grass', p)).join('');
   const snowOpts = [...db.snowProperties].filter(p => !p.deleted).sort(byPropName)
-    .map(p => `<option value="snow:${p.id}">${esc(p.name)}</option>`).join('');
+    .map(p => propertyOptionHTML('snow', p)).join('');
   return `<option value="">Select a property…</option>`
     + (grassOpts ? `<optgroup label="Grass Properties">${grassOpts}</optgroup>` : '')
     + (snowOpts ? `<optgroup label="Snow Properties">${snowOpts}</optgroup>` : '')
