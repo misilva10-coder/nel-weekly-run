@@ -2408,10 +2408,17 @@ function toggleOwnerWOCollapse(id) {
   renderOwnerWorkOrderList();
 }
 
+// Alphabetical, case-insensitive, with numbers compared naturally ("2 Elm" before
+// "10 Elm"). Display order only: the stored route order is left alone.
+const propNameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+function byPropName(a, b) {
+  return propNameCollator.compare((a.name || '').trim(), (b.name || '').trim());
+}
+
 function propertySelectOptionsHTML() {
-  const grassOpts = [...db.properties].filter(p => !p.deleted).sort((a, b) => a.order - b.order)
+  const grassOpts = [...db.properties].filter(p => !p.deleted).sort(byPropName)
     .map(p => `<option value="grass:${p.id}">${esc(p.name)}</option>`).join('');
-  const snowOpts = [...db.snowProperties].filter(p => !p.deleted).sort((a, b) => a.order - b.order)
+  const snowOpts = [...db.snowProperties].filter(p => !p.deleted).sort(byPropName)
     .map(p => `<option value="snow:${p.id}">${esc(p.name)}</option>`).join('');
   return `<option value="">Select a property…</option>`
     + (grassOpts ? `<optgroup label="Grass Properties">${grassOpts}</optgroup>` : '')
