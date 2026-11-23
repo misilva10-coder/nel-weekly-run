@@ -712,6 +712,32 @@ let _fbSaveTimeout = null;
 // cloud, so a failed save is never silent again.
 const PENDING_KEY = 'nel_landscape_v1_pending'; // set while a change has not reached Firebase yet
 let _fbOnline = false, _fbReady = false, _fbSaving = false, _fbError = '';
+let _lastRemote = null; // the newest copy we have seen in Firebase
+const BASE_KEY = 'nel_landscape_v1_base'; // updatedAt of the cloud copy this device last matched
+
+function getBase() { try { return Number(localStorage.getItem(BASE_KEY)) || 0; } catch { return 0; } }
+function setBase(t) { try { localStorage.setItem(BASE_KEY, String(t || 0)); } catch {} }
+
+// How many records each main list holds, to spot a save that removes things.
+function recordCounts(d) {
+  const n = x => Array.isArray(x) ? x.length : (x && typeof x === 'object' ? Object.keys(x).length : 0);
+  d = d || {};
+  return { crews: n(d.crews), properties: n(d.properties), snowProperties: n(d.snowProperties), employees: n(d.employees),
+           workOrders: n(d.workOrders), materials: n(d.materials), logs: n(d.logs), snowLogs: n(d.snowLogs) };
+}
+function removesRecords(oldD, newD) {
+  const a = recordCounts(oldD), b = recordCounts(newD);
+  return Object.keys(a).some(k => b[k] < a[k]);
+}
+
+// Write a one-off copy to nel_landscape_backups/<time>-<reason>. Backups can
+// only be added, never changed or removed, by the app (see database.rules.json).
+function writeBackup(data, reason) {
+  if (!fbRef || !hasRealData(data)) return Promise.resolve();
+  const key = new Date().toISOString().replace(/[.:]/g, '-') + '-' + reason;
+  return firebase.database().ref('nel_landscape_backups/' + key).set(cleanForFirebase(data))
+    .catch(e => console.error('Firebase backup failed', e));
+}
 
 function setPending(on) {
   try { on ? localStorage.setItem(PENDING_KEY, '1') : localStorage.removeItem(PENDING_KEY); } catch {}
@@ -742,13 +768,25 @@ function cleanForFirebase(obj) {
 
 function pushToFirebase() {
   if (!fbRef || !_fbReady) { updateSyncStatus(); return Promise.resolve(); }
+  // Safety: a device may never replace real cloud data with a blank copy.
+  if (hasRealData(_lastRemote) && !hasRealData(db)) {
+    _fbError = 'blocked: this would have erased the cloud data';
+    updateSyncStatus();
+    return Promise.resolve();
+  }
   _fbSaving = true;
   updateSyncStatus();
+  // Anything removed? Keep a copy of the cloud data from just before.
+  const before = (_lastRemote && removesRecords(_lastRemote, db)) ? writeBackup(_lastRemote, 'before-delete') : Promise.resolve();
+  db.updatedAt = Date.now();
   let p;
-  try { p = fbRef.set(cleanForFirebase(db)); }
+  try { p = before.then(() => fbRef.set(cleanForFirebase(db))); }
   catch (e) { p = Promise.reject(e); }
   return p.then(() => {
     _fbSaving = false; _fbError = '';
+    _lastRemote = cleanForFirebase(db);
+    setBase(db.updatedAt);
+    saveLocalCache();
     setPending(false);
     backupDaily();
     updateSyncStatus();
@@ -768,7 +806,7 @@ function backupDaily() {
   let last = '';
   try { last = localStorage.getItem('nel_landscape_v1_lastBackup') || ''; } catch {}
   if (last === day) return;
-  firebase.database().ref('nel_landscape_backups/' + day).set(cleanForFirebase(db)).then(() => {
+  firebase.database().ref('nel_landscape_backups/' + day + '-daily').set(cleanForFirebase(db)).then(() => {
     try { localStorage.setItem('nel_landscape_v1_lastBackup', day); } catch {}
   }).catch(e => console.error('Firebase backup failed', e));
 }
@@ -797,6 +835,8 @@ function applyRemote(remote) {
   migrateSnowLogs(remote.snowLogs);
   migrateWorkOrders(remote.workOrders);
   db = remote;
+  _lastRemote = cleanForFirebase(remote);
+  setBase(remote.updatedAt);
   saveLocalCache();
   applyBranding();
   rerenderAll();
@@ -830,10 +870,22 @@ function initFirebase() {
     }).then(snapshot => {
       _fbReady = true;
       const remote = snapshot.val();
-      // This device has changes that never reached the cloud, or the cloud
-      // copy is blank while this device has real data: upload this device's copy.
-      if (isPending() && hasRealData(db) || (!hasRealData(remote) && hasRealData(db)) || !snapshot.exists()) {
+      _lastRemote = remote;
+      if (!hasRealData(remote) && hasRealData(db)) {
+        // Cloud copy is blank but this device has data: upload it.
         pushToFirebase();
+      } else if (!snapshot.exists()) {
+        pushToFirebase();
+      } else if (isPending() && hasRealData(db)) {
+        if ((remote.updatedAt || 0) > getBase()) {
+          // Someone else changed the cloud data since this device last synced.
+          // The cloud copy wins; this device's unsent changes are kept as a
+          // backup instead of overwriting newer work.
+          writeBackup(db, 'unsent-from-device');
+          setPending(false);
+        } else {
+          pushToFirebase();
+        }
       }
 
       // Real-time listener — fires immediately and on every remote change

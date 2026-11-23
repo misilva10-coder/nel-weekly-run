@@ -1,0 +1,13 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    "nel_landscape_v1": {
+      ".write": "auth != null && newData.exists() && (!data.child('properties').exists() || newData.child('properties').exists()) && (!data.child('snowProperties').exists() || newData.child('snowProperties').exists()) && (!data.child('workOrders').exists() || newData.child('workOrders').exists()) && (!data.child('employees').exists() || newData.child('employees').exists())"
+    },
+    "nel_landscape_backups": {
+      "$key": {
+        ".write": "auth != null && !data.exists() && newData.exists()"
+      }
+    }
+  }
+}
